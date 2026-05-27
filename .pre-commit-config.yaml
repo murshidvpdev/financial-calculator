@@ -1,0 +1,87 @@
+# =============================================================================
+# PRE-COMMIT CONFIGURATION
+# =============================================================================
+# Runs automatically before every `git commit`.
+# Install with: pre-commit install
+# Run manually: pre-commit run --all-files
+#
+# Each "hook" is a check. If ANY hook fails, the commit is blocked.
+# The dev must fix the issue and try committing again.
+# =============================================================================
+
+repos:
+  # ---------------------------------------------------------------------------
+  # Built-in pre-commit hooks — common file safety checks
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      # Prevent giant files from being committed accidentally
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+
+      # Ensure .env is never committed (extra safety beyond .gitignore)
+      - id: check-case-conflict
+
+      # JSON files must be valid JSON
+      - id: check-json
+
+      # YAML files must be valid YAML
+      - id: check-yaml
+
+      # TOML files must be valid TOML (catches broken pyproject.toml)
+      - id: check-toml
+
+      # Don't commit files with merge conflict markers (<<<<<<)
+      - id: check-merge-conflict
+
+      # Remove trailing whitespace from all files
+      - id: trailing-whitespace
+
+      # All files must end with a newline (UNIX standard)
+      - id: end-of-file-fixer
+
+      # Detect AWS keys, private keys, etc. accidentally committed
+      - id: detect-private-key
+
+  # ---------------------------------------------------------------------------
+  # Ruff — Ultra-fast Python linter + import sorter (replaces flake8 + isort)
+  # Run BEFORE black so ruff's fixes are then formatted by black
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.6
+    hooks:
+      # ruff check: lint the code and auto-fix what it can
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+
+      # ruff format: format code (similar to black, but faster)
+      - id: ruff-format
+
+  # ---------------------------------------------------------------------------
+  # Black — The uncompromising code formatter
+  # Makes ALL Python code look identical regardless of who wrote it
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+        language_version: python3.13
+
+  # ---------------------------------------------------------------------------
+  # MyPy — Static type checking
+  # Catches type errors before runtime
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.13.0
+    hooks:
+      - id: mypy
+        additional_dependencies:
+          - types-passlib
+          - types-redis
+          - pydantic>=2.0.0
+          - structlog
+          - sqlalchemy[asyncio]>=2.0.0
+        # Only run mypy on Python files in the backend/app directory
+        files: ^backend/app/
+        args: [--ignore-missing-imports]

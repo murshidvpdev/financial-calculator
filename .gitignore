@@ -1,0 +1,107 @@
+# =============================================================================
+# FINANCE CALCULATOR — .gitignore
+# Professional Python / FastAPI / Docker project gitignore
+# =============================================================================
+
+# --- Python Virtual Environment ---
+# NEVER commit your venv — it's machine-specific, hundreds of MBs
+# Anyone can recreate it with: pip install -r requirements.txt
+.venv/
+venv/
+env/
+ENV/
+.Python
+
+# --- Python Bytecode ---
+# Python compiles .py files to .pyc for faster loading — machine-specific
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+
+# --- Python Distribution / Packaging ---
+dist/
+build/
+*.egg-info/
+*.egg
+.eggs/
+
+# --- Environment Variables ---
+# CRITICAL: NEVER commit .env — it contains secrets (DB passwords, API keys)
+# The .env.example IS committed (it's a template, no real values)
+.env
+.env.local
+.env.staging
+.env.production
+.env.*.local
+
+# --- IDE / Editor Files ---
+.vscode/settings.json     # Local VSCode settings (commit .vscode/extensions.json only)
+.idea/                    # JetBrains IDEs
+*.swp                     # Vim swap files
+*.swo                     # Vim swap files
+.DS_Store                 # macOS folder metadata (VERY common accident)
+Thumbs.db                 # Windows thumbnail cache
+
+# --- Testing / Coverage ---
+.pytest_cache/
+.coverage
+coverage_html/
+htmlcov/
+.tox/
+nosetests.xml
+coverage.xml
+
+# --- Logs ---
+# Logs are runtime artifacts, not source code
+*.log
+logs/
+log/
+
+# --- Database ---
+*.db                      # SQLite databases (for local dev only)
+*.sqlite
+*.sqlite3
+
+# --- Docker ---
+# Don't commit Docker runtime artifacts
+.dockerenv
+
+# --- Alembic ---
+# Migration versions ARE committed (they're schema history)
+# But NOT the compiled cache
+alembic/__pycache__/
+
+# --- Uploaded Files / Media ---
+uploads/
+media/
+*.pdf               # Generated PDFs
+*.xlsx              # Generated Excel files (unless source templates)
+
+# --- Node / Frontend (if added later) ---
+node_modules/
+npm-debug.log
+yarn-error.log
+.npm
+
+# --- Terraform State ---
+# State files contain sensitive infrastructure info (IPs, passwords in state)
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.backup
+infra/terraform/.terraform/
+infra/terraform/.terraform.lock.hcl
+
+# --- macOS ---
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# --- Secrets ---
+# Extra safety net — any file with "secret" in the name
+*.pem
+*.key
+*.cert
+*.p12
+secrets/

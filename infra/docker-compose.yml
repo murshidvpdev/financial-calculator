@@ -1,0 +1,189 @@
+# =============================================================================
+# FINANCE CALCULATOR — Docker Compose (Local Development)
+# =============================================================================
+# What this file does:
+#   Defines all "backing services" (databases, cache) as Docker containers.
+#   The app itself runs on your machine (not in Docker) for hot-reload.
+#
+# Services:
+#   postgres  → PostgreSQL database (our main data store)
+#   redis     → Redis (caching, sessions, Celery broker)
+#   pgadmin   → Web UI for browsing the database (dev only)
+#   mailhog   → Fake SMTP server — catches emails in dev (no real emails sent)
+#
+# Usage:
+#   make docker-up         # Start in background
+#   make docker-down       # Stop
+#   make docker-logs       # Watch logs
+#   make docker-down-volumes  # Stop + DELETE all data
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL — Primary Database
+  # ---------------------------------------------------------------------------
+  # Why PostgreSQL 16?
+  #   - ACID compliant (Atomicity, Consistency, Isolation, Durability)
+  #   - JSONB support (store flexible data without sacrificing query power)
+  #   - Full-text search built-in
+  #   - Used by: Instagram, Discord, Notion, GitHub
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine        # alpine = minimal image (smaller, faster)
+    container_name: finance_postgres
+    restart: unless-stopped          # Auto-restart if it crashes (not on manual stop)
+
+    environment:
+      POSTGRES_DB: finance_db        # Database name (matches DATABASE_URL)
+      POSTGRES_USER: finance_user    # Username
+      POSTGRES_PASSWORD: finance_password  # Password
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"  # Stronger auth
+
+    ports:
+      - "5432:5432"    # host_port:container_port (expose to localhost)
+
+    volumes:
+      # Named volume: persists database data across container restarts
+      # Without this: all data is lost when container stops!
+      - postgres_data:/var/lib/postgresql/data
+
+      # Mount init scripts: run once when DB is first created
+      # Place .sql files here for initial schema/seed data
+      - ./init-scripts:/docker-entrypoint-initdb.d
+
+    # Health check: Docker monitors this and won't start dependent services
+    # until PostgreSQL is actually ready to accept connections
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U finance_user -d finance_db"]
+      interval: 10s     # Check every 10 seconds
+      timeout: 5s       # Fail if check takes > 5 seconds
+      retries: 5        # After 5 failures, mark as unhealthy
+      start_period: 30s # Give 30s for initial startup before health checks begin
+
+    networks:
+      - finance_network
+
+  # ---------------------------------------------------------------------------
+  # Redis — Cache, Sessions, Message Broker
+  # ---------------------------------------------------------------------------
+  # Why Redis?
+  #   - In-memory → microsecond latency
+  #   - Used for: JWT blacklist, rate limiting counters, Celery task queue
+  #   - Optional persistence (RDB snapshots + AOF logs)
+  #   - Used by: Twitter, GitHub, Stack Overflow, Snapchat
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: finance_redis
+    restart: unless-stopped
+
+    command: >
+      redis-server
+      --requirepass redis_password
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+
+    # Explanation of command options:
+    #   --requirepass: Require authentication (good habit even in dev)
+    #   --maxmemory: Limit memory usage (prevents OOM on dev machines)
+    #   --maxmemory-policy allkeys-lru: When full, evict Least Recently Used keys
+    #   --appendonly yes: Enable AOF persistence (data survives restarts)
+
+    ports:
+      - "6379:6379"
+
+    volumes:
+      - redis_data:/data
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "redis_password", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    networks:
+      - finance_network
+
+  # ---------------------------------------------------------------------------
+  # PgAdmin — PostgreSQL Web UI (Development Only)
+  # ---------------------------------------------------------------------------
+  # Allows you to browse tables, run SQL queries, view relationships
+  # Access: http://localhost:5050
+  # Login: admin@finance.local / admin
+  # ---------------------------------------------------------------------------
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: finance_pgadmin
+    restart: unless-stopped
+
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@finance.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: "False"  # Single user mode (no login prompt)
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+
+    ports:
+      - "5050:80"
+
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+
+    depends_on:
+      postgres:
+        condition: service_healthy    # Wait until postgres is healthy
+
+    networks:
+      - finance_network
+
+  # ---------------------------------------------------------------------------
+  # MailHog — Fake SMTP Server (Development Only)
+  # ---------------------------------------------------------------------------
+  # Catches ALL outgoing emails — they appear in a web UI instead of being sent
+  # SMTP: localhost:1025  (your app sends to this)
+  # Web UI: http://localhost:8025  (you see the emails here)
+  # ---------------------------------------------------------------------------
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: finance_mailhog
+    restart: unless-stopped
+
+    ports:
+      - "1025:1025"    # SMTP port (app sends emails here)
+      - "8025:8025"    # Web UI (view caught emails)
+
+    networks:
+      - finance_network
+
+# =============================================================================
+# NETWORKS
+# =============================================================================
+# A private network for our services.
+# Containers on the same network can communicate by service name.
+# Example: app connects to "postgres:5432" — Docker resolves this to the IP.
+# Services are NOT reachable from outside except through exposed ports.
+# =============================================================================
+networks:
+  finance_network:
+    driver: bridge    # Standard Docker networking mode
+    name: finance_network
+
+# =============================================================================
+# VOLUMES — Persistent Data Storage
+# =============================================================================
+# Docker volumes persist data outside the container filesystem.
+# Without volumes: all data is lost when container stops.
+# With volumes: data survives container restarts, updates, rebuilds.
+#
+# Location on Mac: ~/Library/Containers/com.docker.docker/Data/volumes/
+# =============================================================================
+volumes:
+  postgres_data:
+    name: finance_postgres_data
+
+  redis_data:
+    name: finance_redis_data
+
+  pgadmin_data:
+    name: finance_pgadmin_data

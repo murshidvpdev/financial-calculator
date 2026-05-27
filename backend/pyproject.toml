@@ -1,0 +1,207 @@
+[tool.poetry]
+name = "finance-calculator"
+version = "0.1.0"
+description = "Production-grade Finance Calculator & Expense Tracker"
+authors = ["Murshi <murshidveypey790@gmail.com>"]
+readme = "README.md"
+packages = [{include = "app"}]
+
+# =============================================================================
+# PRODUCTION DEPENDENCIES
+# These are installed in EVERY environment (dev, staging, production)
+# =============================================================================
+[tool.poetry.dependencies]
+python = ">=3.12,<3.15"
+
+# --- Web Framework ---
+# FastAPI: Modern, async-native web framework with automatic OpenAPI docs
+# uvicorn: ASGI server (like gunicorn but for async Python apps)
+# uvicorn[standard]: includes uvloop (fast event loop) + httptools (fast HTTP parser)
+fastapi = "^0.115.0"
+uvicorn = {version = "^0.32.0", extras = ["standard"]}
+
+# --- Database ---
+# SQLAlchemy 2.0: Modern ORM with full async support
+# asyncpg: Pure Python async PostgreSQL driver (fastest option)
+# alembic: Database migration tool (think: git for database schema)
+sqlalchemy = {version = "^2.0.0", extras = ["asyncio"]}
+asyncpg = "^0.30.0"
+alembic = "^1.14.0"
+
+# --- Data Validation ---
+# pydantic v2: 10x faster than v1, Rust-powered data validation
+# pydantic-settings: reads config from environment variables + .env files
+pydantic = "^2.10.0"
+pydantic-settings = "^2.6.0"
+
+# --- Authentication ---
+# python-jose: JWT token creation and verification
+# passlib[bcrypt]: Password hashing - bcrypt is the gold standard
+# python-multipart: Required for form data (login forms)
+python-jose = {version = "^3.3.0", extras = ["cryptography"]}
+passlib = {version = "^1.7.4", extras = ["bcrypt"]}
+python-multipart = "^0.0.19"
+
+# --- Templating ---
+# jinja2: Server-side HTML templating (comes with FastAPI)
+# aiofiles: Async file operations for serving static files
+jinja2 = "^3.1.0"
+aiofiles = "^24.1.0"
+
+# --- Caching & Sessions ---
+# redis: Redis client for Python (caching, rate limiting, sessions)
+# hiredis: C-extension for faster Redis protocol parsing
+redis = {version = "^5.2.0", extras = ["hiredis"]}
+
+# --- Task Queue ---
+# celery: Distributed task queue (for sending emails, generating reports async)
+celery = {version = "^5.4.0", extras = ["redis"]}
+
+# --- HTTP Client ---
+# httpx: Modern async HTTP client (used internally + for testing)
+httpx = "^0.28.0"
+
+# --- Logging ---
+# structlog: Structured logging (outputs JSON in production, pretty in dev)
+# rich: Beautiful terminal output (used by structlog in dev mode)
+structlog = "^24.4.0"
+rich = "^13.9.0"
+
+# --- Financial Math ---
+# No external lib needed - we use Python's built-in decimal module
+# But we add babel for currency formatting
+babel = "^2.16.0"
+
+# --- File Export ---
+# openpyxl: Excel file generation (.xlsx)
+# reportlab: PDF generation
+openpyxl = "^3.1.0"
+reportlab = "^4.2.0"
+
+# --- Email ---
+# fastapi-mail: Email sending (wraps smtplib/aiosmtplib)
+fastapi-mail = "^1.4.0"
+
+# --- Utilities ---
+# python-slugify: Generate URL-safe slugs from text
+# arrow: Better datetime handling than stdlib datetime
+python-slugify = "^8.0.0"
+arrow = "^1.3.0"
+
+# --- Middleware ---
+# slowapi: Rate limiting middleware for FastAPI (wraps limits library)
+slowapi = "^0.1.9"
+
+# =============================================================================
+# DEVELOPMENT DEPENDENCIES
+# Only installed in development environments (not production Docker image)
+# =============================================================================
+[tool.poetry.group.dev.dependencies]
+# --- Code Quality ---
+# black: Opinionated code formatter (no config debates!)
+# ruff: Ultra-fast linter (replaces flake8, isort, pylint - all in one)
+# mypy: Static type checker (catches bugs before runtime)
+black = "^24.10.0"
+ruff = "^0.8.0"
+mypy = "^1.13.0"
+
+# --- Type Stubs ---
+types-passlib = "^1.7.0"
+types-python-jose = "^3.3.0"
+types-aiofiles = "^24.1.0"
+
+# --- Testing ---
+pytest = "^8.3.0"
+pytest-asyncio = "^0.24.0"
+pytest-cov = "^6.0.0"
+factory-boy = "^3.3.0"
+faker = "^33.0.0"
+
+# --- Pre-commit ---
+pre-commit = "^4.0.0"
+
+# --- Dev Server Utilities ---
+watchfiles = "^1.0.0"
+
+# =============================================================================
+# TOOL CONFIGURATIONS (replaces separate config files)
+# =============================================================================
+
+# --- Black: Code Formatter ---
+[tool.black]
+line-length = 88
+target-version = ["py313"]
+include = '\.pyi?$'
+
+# --- Ruff: Linter ---
+[tool.ruff]
+target-version = "py313"
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes (unused imports, undefined names)
+    "I",   # isort (import ordering)
+    "B",   # flake8-bugbear (common bugs)
+    "C4",  # flake8-comprehensions (better list comprehensions)
+    "UP",  # pyupgrade (use modern Python syntax)
+    "S",   # bandit security checks
+    "N",   # pep8-naming conventions
+]
+ignore = [
+    "S101",  # Allow assert (used in tests)
+    "B008",  # Allow function calls in default arguments (FastAPI Depends())
+    "F821",  # SQLAlchemy uses string forward references resolved at runtime
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S105", "S106"]
+
+# --- MyPy: Type Checker ---
+[tool.mypy]
+python_version = "3.13"
+strict = true
+ignore_missing_imports = true
+disallow_untyped_defs = true
+warn_return_any = true
+warn_unused_ignores = true
+
+# --- Pytest: Test Configuration ---
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = [
+    "--cov=app",
+    "--cov-report=term-missing",
+    "--cov-report=html:coverage_html",
+    "--cov-fail-under=80",
+    "-v",
+]
+
+# --- Coverage.py ---
+[tool.coverage.run]
+source = ["app"]
+omit = [
+    "*/tests/*",
+    "*/migrations/*",
+    "*/__init__.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
+
+# =============================================================================
+# BUILD SYSTEM
+# =============================================================================
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
