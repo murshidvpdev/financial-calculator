@@ -1,0 +1,27 @@
+# =============================================================================
+# CODEOWNERS — Automatic code review assignments
+# =============================================================================
+# When a PR touches these paths, these people are automatically added as reviewers.
+# Format: <pattern> <@github-username or @org/team>
+#
+# Rules:
+#   - Later rules override earlier ones
+#   - Match is against the full path from repo root
+#   - * matches any file in the directory (not recursive)
+#   - ** matches any file recursively
+# =============================================================================
+
+# Default owners for everything
+* @murshi
+
+# Infrastructure changes require extra review
+infra/                  @murshi
+.github/workflows/      @murshi
+
+# Backend core (auth, security, database)
+backend/app/auth/       @murshi
+backend/app/core/       @murshi
+backend/migrations/     @murshi
+
+# CI/CD (treat like infrastructure)
+backend/Dockerfile      @murshi

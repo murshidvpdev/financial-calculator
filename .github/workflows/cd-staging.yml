@@ -1,0 +1,306 @@
+# =============================================================================
+# CD Pipeline — Staging Deployment
+# =============================================================================
+#
+# Triggered when:
+#   - A PR is merged to the `develop` branch
+#   (push to develop = merge from a feature branch)
+#
+# What it does:
+#   1. Build the Docker image
+#   2. Push to AWS ECR (Elastic Container Registry)
+#   3. Deploy to ECS staging cluster
+#   4. Run smoke tests against staging URL
+#   5. Notify Slack (success or failure)
+#
+# Staging environment:
+#   - Isolated AWS environment (separate VPC, separate RDS, separate ECS cluster)
+#   - Uses real infrastructure (not mocks) but NOT production data
+#   - URL: https://staging.finance-calculator.yourdomain.com
+#
+# Flow:
+#   feature/X → develop (merge) → staging auto-deploy
+#                                → QA testing
+#                                → PR to main
+#                                → production deploy (manual gate)
+#
+# Required GitHub Secrets:
+#   AWS_ACCESS_KEY_ID       — IAM user with ECR push + ECS deploy permissions
+#   AWS_SECRET_ACCESS_KEY   — IAM user secret
+#   AWS_REGION              — e.g., us-east-1
+#   ECR_REGISTRY            — e.g., 123456789.dkr.ecr.us-east-1.amazonaws.com
+#   ECR_REPOSITORY          — e.g., finance-calculator
+#   ECS_CLUSTER_STAGING     — e.g., finance-staging-cluster
+#   ECS_SERVICE_STAGING     — e.g., finance-staging-service
+#   ECS_TASK_DEFINITION     — e.g., finance-staging-task
+#   SLACK_WEBHOOK_URL       — Incoming webhook for deploy notifications
+# =============================================================================
+
+name: CD — Deploy to Staging
+
+on:
+  push:
+    branches:
+      - develop    # Trigger on every push to develop (feature branch merges)
+
+# Only one staging deploy at a time
+# If a second push comes in while deploying, cancel the first
+concurrency:
+  group: cd-staging
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  id-token: write    # Required for OIDC authentication with AWS (more secure than access keys)
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+  IMAGE_TAG: ${{ github.sha }}    # Use commit SHA as image tag (unique, traceable)
+
+jobs:
+
+  # ===========================================================================
+  # JOB 1: Build and push Docker image to ECR
+  # ===========================================================================
+  build-and-push:
+    name: "Build & Push to ECR"
+    runs-on: ubuntu-latest
+
+    outputs:
+      # Pass the full image URI to the deploy job
+      image: ${{ steps.build-push.outputs.digest }}
+      image-uri: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          # OIDC authentication (preferred over long-lived access keys)
+          # Creates short-lived credentials tied to this specific GitHub Actions run
+          # No secrets stored in GitHub — AWS trusts GitHub's OIDC token
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          # If not using OIDC, comment out role-to-assume and uncomment below:
+          # aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          # aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+        # This step authenticates Docker with ECR
+        # After this, docker push to ECR registry just works
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push to ECR
+        id: build-push
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          target: runtime
+          push: true    # YES push — this is the CD pipeline
+          tags: |
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:staging-latest
+          # staging-latest: "latest image on staging" (for quick reference)
+          # sha tag: immutable, traceable to exact commit
+
+          # Use GitHub Actions cache for faster rebuilds
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+          # Inject build metadata into image labels
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Image digest summary
+        run: |
+          echo "## Docker Image Built" >> $GITHUB_STEP_SUMMARY
+          echo "- **Registry**: \`${{ env.ECR_REGISTRY }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tag**: \`${{ env.IMAGE_TAG }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Digest**: \`${{ steps.build-push.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
+        # $GITHUB_STEP_SUMMARY: Markdown written here shows in the GitHub Actions UI
+
+
+  # ===========================================================================
+  # JOB 2: Deploy to ECS Staging
+  # ===========================================================================
+  # ECS deployment strategy:
+  #   1. Download current task definition JSON
+  #   2. Update the container image URI in the task definition
+  #   3. Register the new task definition revision
+  #   4. Update the ECS service to use the new task definition
+  #   5. ECS performs a rolling update (replaces old tasks with new ones)
+  #
+  # Rolling update:
+  #   ECS starts new task → waits for health check → stops old task
+  #   If new task fails health check → rollback to previous revision
+  # ===========================================================================
+  deploy-staging:
+    name: "Deploy to ECS Staging"
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    environment: staging    # GitHub Environment (can have required reviewers, secrets)
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Download current ECS task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition ${{ secrets.ECS_TASK_DEFINITION }} \
+            --query taskDefinition \
+            > task-definition.json
+          echo "Downloaded task definition:"
+          cat task-definition.json | python3 -c "import json,sys; td=json.load(sys.stdin); print(f'Family: {td[\"family\"]}, Revision: {td[\"revision\"]}')"
+
+      - name: Update image in task definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: finance-app     # Must match containerDefinitions[].name in ECS
+          image: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          # This action injects the new image URI into the task definition JSON
+          # and outputs the path to the modified file
+
+      - name: Deploy to ECS service (rolling update)
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: ${{ secrets.ECS_SERVICE_STAGING }}
+          cluster: ${{ secrets.ECS_CLUSTER_STAGING }}
+          wait-for-service-stability: true
+          # wait-for-service-stability: Block until ECS reports the service is stable
+          # (all old tasks replaced by new tasks that pass health checks)
+          # Timeout: 10 minutes by default (ECS gives up after this)
+
+      - name: Write deploy summary
+        run: |
+          echo "## Staging Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment**: Staging" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: \`${{ env.IMAGE_TAG }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: [${{ github.sha }}](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})" >> $GITHUB_STEP_SUMMARY
+          echo "- **Triggered by**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+
+
+  # ===========================================================================
+  # JOB 3: Smoke Tests (post-deploy)
+  # ===========================================================================
+  # After deployment, verify staging is actually working.
+  # Smoke tests = minimal set of tests to confirm basic functionality.
+  # If staging is broken, we want to know before anyone tries to QA it.
+  # ===========================================================================
+  smoke-tests:
+    name: "Smoke Tests (staging)"
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Wait for staging to be healthy
+        run: |
+          STAGING_URL="${{ secrets.STAGING_URL }}"
+          echo "Waiting for $STAGING_URL to be healthy..."
+          for i in {1..12}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$STAGING_URL/api/v1/health/live" || echo "000")
+            echo "Attempt $i: HTTP $STATUS"
+            if [ "$STATUS" = "200" ]; then
+              echo "✅ Staging is healthy!"
+              break
+            fi
+            if [ $i -eq 12 ]; then
+              echo "❌ Staging health check failed after 60s"
+              exit 1
+            fi
+            sleep 5
+          done
+
+      - name: Run smoke tests
+        run: |
+          STAGING_URL="${{ secrets.STAGING_URL }}"
+
+          # Test 1: Health check
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$STAGING_URL/api/v1/health/live")
+          [ "$STATUS" = "200" ] && echo "✅ Health live: OK" || (echo "❌ Health live failed: $STATUS"; exit 1)
+
+          # Test 2: Ready check (DB connectivity)
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$STAGING_URL/api/v1/health/ready")
+          [ "$STATUS" = "200" ] && echo "✅ Health ready: OK" || (echo "❌ Health ready failed: $STATUS"; exit 1)
+
+          # Test 3: API docs are accessible
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$STAGING_URL/docs")
+          [ "$STATUS" = "200" ] && echo "✅ API docs: OK" || echo "⚠️ API docs: $STATUS (non-critical)"
+
+          # Test 4: Register a smoke test user (proves auth is working end-to-end)
+          REGISTER_RESP=$(curl -s -w "\n%{http_code}" -X POST "$STAGING_URL/api/v1/auth/register" \
+            -H "Content-Type: application/json" \
+            -d '{"email":"smoke-test@ci.example.com","username":"smoketest","password":"SmokeTe$t2024!"}')
+          STATUS=$(echo "$REGISTER_RESP" | tail -1)
+          [ "$STATUS" = "201" ] || [ "$STATUS" = "409" ] && echo "✅ Auth register: OK ($STATUS)" || (echo "❌ Auth register failed: $STATUS"; exit 1)
+          # 409 = user already exists from a previous smoke test run — that's fine
+
+          echo ""
+          echo "✅ All smoke tests passed!"
+
+      - name: Notify Slack — success
+        if: success()
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "✅ Staging deployed successfully",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "✅ *Staging Deployment — Success*\n*Commit*: <${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}|${{ github.sha }}>\n*By*: ${{ github.actor }}\n*URL*: ${{ secrets.STAGING_URL }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        continue-on-error: true
+
+      - name: Notify Slack — failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "❌ Staging deployment failed",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "❌ *Staging Deployment — FAILED*\n*Commit*: <${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}|${{ github.sha }}>\n*By*: ${{ github.actor }}\n*Logs*: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View logs>"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        continue-on-error: true

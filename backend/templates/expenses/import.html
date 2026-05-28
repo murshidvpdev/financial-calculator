@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+
+{% block title %}Import Expenses — Finance Calculator{% endblock %}
+{% block page_title %}Import Transactions{% endblock %}
+{% block page_subtitle %}Bulk import from PhonePe, GPay, Paytm, HDFC, or SBI — CSV, PDF, or Excel{% endblock %}
+
+{% block content %}
+
+<!-- ── BREADCRUMB ──────────────────────────────────────────────────────────── -->
+<div class="flex items-center gap-2 text-sm text-gray-500 mb-6">
+  <a href="/expenses" class="hover:text-gray-700 transition-colors">💸 Expenses</a>
+  <span>›</span>
+  <span class="text-gray-900 font-medium">Import</span>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+  <!-- ── LEFT: UPLOAD CARD ─────────────────────────────────────────────────── -->
+  <div class="lg:col-span-2 space-y-5">
+
+    <!-- Upload form -->
+    <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+      <h2 class="text-base font-semibold text-gray-900 mb-1">📂 Upload your statement</h2>
+      <p class="text-xs text-gray-500 mb-4">Supports <strong>CSV</strong>, <strong>PDF</strong>, and <strong>Excel (.xlsx)</strong> — PhonePe, GPay, Paytm, HDFC, SBI</p>
+
+      <form
+        id="import-form"
+        hx-post="/web/expenses/import/preview"
+        hx-target="#preview-container"
+        hx-swap="innerHTML"
+        hx-encoding="multipart/form-data"
+        hx-indicator="#upload-spinner"
+        class="space-y-5"
+      >
+        <!-- Drop zone -->
+        <label for="csv-file-input"
+          class="flex flex-col items-center justify-center w-full h-44 border-2 border-dashed border-gray-300
+                 rounded-xl cursor-pointer bg-gray-50 hover:bg-blue-50 hover:border-blue-400 transition-colors group"
+          id="drop-zone">
+          <div class="flex flex-col items-center gap-2 text-gray-500 group-hover:text-blue-600 transition-colors">
+            <span class="text-4xl" id="drop-icon">📋</span>
+            <p class="text-sm font-medium">Click to choose file or drag &amp; drop</p>
+            <p class="text-xs text-gray-400" id="file-name-label">CSV, PDF, or Excel (.xlsx) files accepted</p>
+          </div>
+          <!-- Accept CSV, PDF, and Excel -->
+          <input id="csv-file-input" type="file" name="csv_file"
+                 accept=".csv,.pdf,.xlsx,.xls,text/csv,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                 class="hidden" onchange="updateFileName(this)">
+        </label>
+
+        <!-- Submit button -->
+        <div class="flex items-center gap-3">
+          <button type="submit"
+            class="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold transition-colors shadow-sm">
+            <span id="upload-spinner" class="htmx-indicator">
+              <svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+              </svg>
+            </span>
+            Parse &amp; Preview
+          </button>
+          <a href="/expenses" class="px-4 py-2.5 text-gray-600 hover:text-gray-900 text-sm transition-colors">
+            Cancel
+          </a>
+        </div>
+      </form>
+    </div>
+
+    <!-- Preview container — HTMX injects result here -->
+    <div id="preview-container"></div>
+
+  </div>
+
+  <!-- ── RIGHT: FORMAT GUIDE ───────────────────────────────────────────────── -->
+  <div class="space-y-4">
+
+    <!-- Supported sources -->
+    <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
+      <h3 class="text-sm font-semibold text-gray-900 mb-4">✅ Supported sources</h3>
+      <div class="space-y-3">
+
+        <div class="flex items-start gap-3 p-3 bg-purple-50 rounded-xl">
+          <span class="text-xl mt-0.5">📱</span>
+          <div>
+            <p class="text-sm font-semibold text-purple-900">PhonePe <span class="font-normal text-xs text-purple-600">CSV</span></p>
+            <p class="text-xs text-purple-700">App → History → Download Statement</p>
+          </div>
+        </div>
+
+        <div class="flex items-start gap-3 p-3 bg-blue-50 rounded-xl">
+          <span class="text-xl mt-0.5">🔵</span>
+          <div>
+            <p class="text-sm font-semibold text-blue-900">Google Pay <span class="font-normal text-xs text-blue-600">CSV</span></p>
+            <p class="text-xs text-blue-700">myaccount.google.com → Data &amp; Privacy → Download your data → Google Pay</p>
+          </div>
+        </div>
+
+        <div class="flex items-start gap-3 p-3 bg-cyan-50 rounded-xl">
+          <span class="text-xl mt-0.5">💳</span>
+          <div>
+            <p class="text-sm font-semibold text-cyan-900">Paytm <span class="font-normal text-xs text-cyan-600">CSV · PDF · Excel</span></p>
+            <p class="text-xs text-cyan-700">App → Passbook → Download Statement (CSV, PDF, or Excel)</p>
+          </div>
+        </div>
+
+        <div class="flex items-start gap-3 p-3 bg-red-50 rounded-xl">
+          <span class="text-xl mt-0.5">🏦</span>
+          <div>
+            <p class="text-sm font-semibold text-red-900">HDFC Bank <span class="font-normal text-xs text-red-600">CSV · PDF · Excel</span></p>
+            <p class="text-xs text-red-700">NetBanking → Account Statement → Download</p>
+          </div>
+        </div>
+
+        <div class="flex items-start gap-3 p-3 bg-sky-50 rounded-xl">
+          <span class="text-xl mt-0.5">🏛️</span>
+          <div>
+            <p class="text-sm font-semibold text-sky-900">SBI <span class="font-normal text-xs text-sky-600">CSV · PDF · Excel</span></p>
+            <p class="text-xs text-sky-700">OnlineSBI → Account Statement → Download</p>
+          </div>
+        </div>
+
+        <div class="flex items-start gap-3 p-3 bg-gray-50 rounded-xl">
+          <span class="text-xl mt-0.5">📊</span>
+          <div>
+            <p class="text-sm font-semibold text-gray-900">Other banks <span class="font-normal text-xs text-gray-500">CSV · PDF · Excel</span></p>
+            <p class="text-xs text-gray-600">ICICI, Axis, Kotak, Paytm Bank — any file with Date, Description, Debit/Credit columns</p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Tips -->
+    <div class="bg-amber-50 border border-amber-200 rounded-2xl p-5">
+      <h3 class="text-sm font-semibold text-amber-900 mb-3">💡 Tips</h3>
+      <ul class="space-y-2 text-xs text-amber-800">
+        <li class="flex items-start gap-1.5"><span>•</span> <strong>CSV</strong>, <strong>PDF</strong>, and <strong>Excel (.xlsx)</strong> statements are supported</li>
+        <li class="flex items-start gap-1.5"><span>•</span> Only <strong>debit transactions</strong> are imported as expenses by default</li>
+        <li class="flex items-start gap-1.5"><span>•</span> Toggle "Show credits" to also import income</li>
+        <li class="flex items-start gap-1.5"><span>•</span> Change categories before confirming — categories are auto-suggested</li>
+        <li class="flex items-start gap-1.5"><span>•</span> Uncheck rows you don't want</li>
+        <li class="flex items-start gap-1.5"><span>•</span> No duplicate detection — avoid importing the same file twice</li>
+        <li class="flex items-start gap-1.5"><span>•</span> Max 500 transactions per import</li>
+      </ul>
+    </div>
+
+  </div>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function updateFileName(input) {
+    const label  = document.getElementById('file-name-label');
+    const icon   = document.getElementById('drop-icon');
+    if (input.files && input.files[0]) {
+      const name = input.files[0].name;
+      const size = (input.files[0].size / 1024).toFixed(1);
+      const ext  = name.split('.').pop().toLowerCase();
+      const iconMap = { pdf: '📄', xlsx: '📊', xls: '📊', csv: '📋' };
+      label.textContent = `${name} (${size} KB)`;
+      label.classList.remove('text-gray-400');
+      label.classList.add('text-blue-600', 'font-medium');
+      icon.textContent = iconMap[ext] || '📋';
+    }
+  }
+
+  // Drag and drop
+  const zone  = document.getElementById('drop-zone');
+  const input = document.getElementById('csv-file-input');
+
+  zone.addEventListener('dragover', e => {
+    e.preventDefault();
+    zone.classList.add('border-blue-500', 'bg-blue-50');
+  });
+  zone.addEventListener('dragleave', () => {
+    zone.classList.remove('border-blue-500', 'bg-blue-50');
+  });
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('border-blue-500', 'bg-blue-50');
+    if (e.dataTransfer.files.length > 0) {
+      input.files = e.dataTransfer.files;
+      updateFileName(input);
+    }
+  });
+</script>
+{% endblock %}

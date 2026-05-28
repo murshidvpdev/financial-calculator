@@ -58,15 +58,9 @@ repos:
       # ruff format: format code (similar to black, but faster)
       - id: ruff-format
 
-  # ---------------------------------------------------------------------------
-  # Black — The uncompromising code formatter
-  # Makes ALL Python code look identical regardless of who wrote it
-  # ---------------------------------------------------------------------------
-  - repo: https://github.com/psf/black
-    rev: 24.10.0
-    hooks:
-      - id: black
-        language_version: python3.13
+  # Note: black removed — ruff-format is black-compatible and runs above.
+  # Having both causes a formatting loop (each rewrites the other's output).
+  # ruff-format is the recommended replacement per ruff documentation.
 
   # ---------------------------------------------------------------------------
   # MyPy — Static type checking
@@ -77,11 +71,11 @@ repos:
     hooks:
       - id: mypy
         additional_dependencies:
-          - types-passlib
           - types-redis
           - pydantic>=2.0.0
           - structlog
           - sqlalchemy[asyncio]>=2.0.0
+          - bcrypt>=5.0.0
         # Only run mypy on Python files in the backend/app directory
         files: ^backend/app/
         args: [--ignore-missing-imports]

@@ -469,4 +469,6 @@ class Budget(TimestampedModel):
     )
 
     def __repr__(self) -> str:
-        return f"<Budget(id={self.id}, amount={self.amount}, period={self.period_start.date()})>"
+        return (
+            f"<Budget(id={self.id}, amount={self.amount}, period={self.period_start})>"  # type: ignore[attr-defined]
+        )

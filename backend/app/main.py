@@ -44,6 +44,7 @@ from app.exceptions import (
     unhandled_exception_handler,
     validation_exception_handler,
 )
+from app.pages.router import router as pages_router
 from app.routers import api_router
 
 # Get logger for this module
@@ -225,6 +226,9 @@ Built with FastAPI + PostgreSQL + Redis.
     # ROUTERS — Include all API route modules
     # -------------------------------------------------------------------------
     app.include_router(api_router)
+
+    # HTML page routes (/, /login, /dashboard, /expenses)
+    app.include_router(pages_router)
 
     # -------------------------------------------------------------------------
     # STATIC FILES & TEMPLATES

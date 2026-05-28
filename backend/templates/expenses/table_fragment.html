@@ -1,0 +1,76 @@
+{% if expenses.items %}
+<div class="overflow-x-auto">
+  <table class="w-full text-sm">
+    <thead class="bg-gray-50 border-b border-gray-200">
+      <tr>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Description</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Category</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Date</th>
+        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wide">Amount</th>
+        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wide">Actions</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for exp in expenses.items %}
+      <tr class="hover:bg-gray-50 transition-colors" id="expense-row-{{ exp.id }}">
+        <td class="px-6 py-4">
+          <div class="font-medium text-gray-900">{{ exp.description }}</div>
+          {% if exp.notes %}
+          <div class="text-xs text-gray-400 mt-0.5 truncate max-w-xs">{{ exp.notes }}</div>
+          {% endif %}
+        </td>
+        <td class="px-6 py-4">
+          {% if exp.category %}
+          <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium"
+                style="background: {{ exp.category.color }}20; color: {{ exp.category.color }}">
+            {{ exp.category.icon }} {{ exp.category.name }}
+          </span>
+          {% else %}
+          <span class="text-gray-400 text-xs">Uncategorized</span>
+          {% endif %}
+        </td>
+        <td class="px-6 py-4 text-gray-500 text-xs whitespace-nowrap">
+          {{ exp.date.strftime('%Y-%m-%d') if exp.date else '—' }}
+        </td>
+        <td class="px-6 py-4 text-right font-semibold text-gray-900 whitespace-nowrap">
+          ₹{{ "%.2f"|format(exp.amount) }}
+        </td>
+        <td class="px-6 py-4 text-right">
+          <button
+            hx-delete="/web/expenses/{{ exp.id }}"
+            hx-target="#expense-row-{{ exp.id }}"
+            hx-swap="outerHTML swap:0.3s"
+            hx-confirm="Delete '{{ exp.description }}'?"
+            class="text-xs text-red-500 hover:text-red-700 font-medium transition-colors px-2 py-1 rounded hover:bg-red-50"
+          >
+            Delete
+          </button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if expenses.has_next %}
+<div class="px-6 py-4 border-t border-gray-200 flex justify-center">
+  <a href="/expenses?search={{ search }}&page_cursor={{ expenses.next_cursor }}"
+     class="px-5 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
+    Load more →
+  </a>
+</div>
+{% endif %}
+
+{% else %}
+<div class="px-6 py-16 text-center">
+  <div class="text-4xl mb-3">💸</div>
+  <h3 class="text-base font-semibold text-gray-900 mb-1">No expenses found</h3>
+  <p class="text-sm text-gray-500">
+    {% if search %}
+      No results for "{{ search }}". <a href="/expenses" class="text-blue-600 underline">Clear filter</a>
+    {% else %}
+      Click <strong>+ Add Expense</strong> above to get started.
+    {% endif %}
+  </p>
+</div>
+{% endif %}

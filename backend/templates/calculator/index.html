@@ -1,0 +1,441 @@
+{% extends "base.html" %}
+
+{% block title %}Finance Calculators — Finance Calculator{% endblock %}
+{% block page_title %}Finance Calculators{% endblock %}
+{% block page_subtitle %}Plan your money with precision{% endblock %}
+
+{% block content %}
+
+<!-- ── CALCULATOR TABS ─────────────────────────────────────────────── -->
+<div class="flex flex-wrap gap-2 mb-6">
+  {% set tabs = [
+    ("compound",  "🏦", "Compound Interest"),
+    ("emi",       "🏠", "Loan EMI"),
+    ("sip",       "📈", "SIP Returns"),
+    ("savings",   "🎯", "Savings Goal"),
+    ("tax",       "📋", "Tax Estimate"),
+    ("budget",    "💡", "50/30/20 Rule"),
+  ] %}
+  {% for id, icon, label in tabs %}
+  <button
+    onclick="switchTab('{{ id }}')"
+    id="tab-{{ id }}"
+    class="tab-btn px-4 py-2 rounded-xl text-sm font-semibold border transition-colors
+           {% if loop.first %}bg-blue-600 text-white border-blue-600{% else %}bg-white text-gray-600 border-gray-200 hover:border-blue-400 hover:text-blue-600{% endif %}"
+  >
+    {{ icon }} {{ label }}
+  </button>
+  {% endfor %}
+</div>
+
+<!-- ── CALCULATOR PANELS ──────────────────────────────────────────── -->
+
+<!-- 1. COMPOUND INTEREST -->
+<div id="calc-compound" class="calc-panel">
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div class="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+      <h2 class="text-base font-bold text-gray-900 mb-1">🏦 Compound Interest</h2>
+      <p class="text-xs text-gray-500 mb-5">A = P(1 + r/n)^(nt) — how your investment grows over time</p>
+      <form id="form-compound" class="space-y-4" onsubmit="calcCompound(event)">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1">Principal (₹)</label>
+            <input type="number" id="ci-principal" value="100000" min="1" step="1000"
+              class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1">Annual Rate (%)</label>
+            <input type="number" id="ci-rate" value="8" min="0.01" step="0.1"
+              class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1">Years</label>
+            <input type="number" id="ci-years" value="10" min="1" step="1"
+              class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1">Compounding</label>
+            <select id="ci-compounds" class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+              <option value="1">Yearly</option>
+              <option value="4">Quarterly</option>
+              <option value="12" selected>Monthly</option>
+              <option value="365">Daily</option>
+            </select>
+          </div>
+        </div>
+        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-xl text-sm transition-colors">
+          Calculate →
+        </button>
+      </form>
+    </div>
+    <div id="result-compound" class="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl border border-blue-100 p-6 flex items-center justify-center">
+      <p class="text-gray-400 text-sm">Fill in the form and click Calculate</p>
+    </div>
+  </div>
+</div>
+
+<!-- 2. LOAN EMI -->
+<div id="calc-emi" class="calc-panel hidden">
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div class="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+      <h2 class="text-base font-bold text-gray-900 mb-1">🏠 Loan EMI Calculator</h2>
+      <p class="text-xs text-gray-500 mb-5">EMI = P × r × (1+r)^n / ((1+r)^n − 1)</p>
+      <form id="form-emi" class="space-y-4" onsubmit="calcEMI(event)">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1">Loan Amount (₹)</label>
+            <input type="number" id="emi-principal" value="5000000" min="1" step="10000"
+              class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1">Annual Rate (%)</label>
+            <input type="number" id="emi-rate" value="8.5" min="0.1" step="0.1"
+              class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div class="col-span-2">
+            <label class="block text-xs font-semibold text-gray-600 mb-1">Tenure (months)</label>
+            <div class="flex items-center gap-3">
+              <input type="range" id="emi-months" value="240" min="12" max="360" step="12"
+                class="flex-1 accent-blue-600" oninput="document.getElementById('emi-months-val').textContent=this.value+' months ('+Math.round(this.value/12)+' yrs)'">
+              <span id="emi-months-val" class="text-xs font-medium text-gray-700 whitespace-nowrap w-32">240 months (20 yrs)</span>
+            </div>
+          </div>
+        </div>
+        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-xl text-sm transition-colors">
+          Calculate EMI →
+        </button>
+      </form>
+    </div>
+    <div id="result-emi" class="bg-gradient-to-br from-purple-50 to-pink-50 rounded-2xl border border-purple-100 p-6 flex items-center justify-center">
+      <p class="text-gray-400 text-sm">Fill in the form and click Calculate</p>
+    </div>
+  </div>
+</div>
+
+<!-- 3. SIP -->
+<div id="calc-sip" class="calc-panel hidden">
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div class="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+      <h2 class="text-base font-bold text-gray-900 mb-1">📈 SIP Calculator</h2>
+      <p class="text-xs text-gray-500 mb-5">Systematic Investment Plan — monthly mutual fund investment returns</p>
+      <form id="form-sip" class="space-y-4" onsubmit="calcSIP(event)">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1">Monthly SIP (₹)</label>
+            <input type="number" id="sip-monthly" value="10000" min="500" step="500"
+              class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1">Expected Return (%)</label>
+            <input type="number" id="sip-rate" value="12" min="1" step="0.5"
+              class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div class="col-span-2">
+            <label class="block text-xs font-semibold text-gray-600 mb-1">Investment Period (years)</label>
+            <div class="flex items-center gap-3">
+              <input type="range" id="sip-years" value="15" min="1" max="40" step="1"
+                class="flex-1 accent-blue-600" oninput="document.getElementById('sip-years-val').textContent=this.value+' years'">
+              <span id="sip-years-val" class="text-xs font-medium text-gray-700 w-20">15 years</span>
+            </div>
+          </div>
+        </div>
+        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-xl text-sm transition-colors">
+          Calculate Returns →
+        </button>
+      </form>
+    </div>
+    <div id="result-sip" class="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl border border-green-100 p-6 flex items-center justify-center">
+      <p class="text-gray-400 text-sm">Fill in the form and click Calculate</p>
+    </div>
+  </div>
+</div>
+
+<!-- 4. SAVINGS PROJECTION -->
+<div id="calc-savings" class="calc-panel hidden">
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div class="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+      <h2 class="text-base font-bold text-gray-900 mb-1">🎯 Savings Projection</h2>
+      <p class="text-xs text-gray-500 mb-5">Project your savings growth with inflation-adjusted returns</p>
+      <form id="form-savings" class="space-y-4" onsubmit="calcSavings(event)">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1">Monthly Savings (₹)</label>
+            <input type="number" id="sv-monthly" value="15000" min="500" step="500"
+              class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1">Current Savings (₹)</label>
+            <input type="number" id="sv-current" value="0" min="0" step="1000"
+              class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1">Annual Return (%)</label>
+            <input type="number" id="sv-rate" value="8" min="0.1" step="0.5"
+              class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1">Years</label>
+            <input type="number" id="sv-years" value="10" min="1" step="1"
+              class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+        </div>
+        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-xl text-sm transition-colors">
+          Project Savings →
+        </button>
+      </form>
+    </div>
+    <div id="result-savings" class="bg-gradient-to-br from-yellow-50 to-orange-50 rounded-2xl border border-yellow-100 p-6 flex items-center justify-center">
+      <p class="text-gray-400 text-sm">Fill in the form and click Calculate</p>
+    </div>
+  </div>
+</div>
+
+<!-- 5. TAX ESTIMATE -->
+<div id="calc-tax" class="calc-panel hidden">
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div class="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+      <h2 class="text-base font-bold text-gray-900 mb-1">📋 Income Tax Estimator</h2>
+      <p class="text-xs text-gray-500 mb-5">Estimate your Indian income tax under New Tax Regime (FY 2024-25)</p>
+      <form id="form-tax" class="space-y-4" onsubmit="calcTax(event)">
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1">Annual Income (₹)</label>
+          <input type="number" id="tax-income" value="1200000" min="0" step="10000"
+            class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1">Deductions under 80C, HRA etc. (₹)</label>
+          <input type="number" id="tax-deductions" value="150000" min="0" step="10000"
+            class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-xl text-sm transition-colors">
+          Estimate Tax →
+        </button>
+        <p class="text-xs text-gray-400">* Simplified estimate. Consult a CA for official filing.</p>
+      </form>
+    </div>
+    <div id="result-tax" class="bg-gradient-to-br from-red-50 to-orange-50 rounded-2xl border border-red-100 p-6 flex items-center justify-center">
+      <p class="text-gray-400 text-sm">Fill in the form and click Calculate</p>
+    </div>
+  </div>
+</div>
+
+<!-- 6. BUDGET PLANNER (50/30/20) -->
+<div id="calc-budget" class="calc-panel hidden">
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div class="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+      <h2 class="text-base font-bold text-gray-900 mb-1">💡 50/30/20 Budget Planner</h2>
+      <p class="text-xs text-gray-500 mb-5">Needs 50% · Wants 30% · Savings 20% — the classic budget rule</p>
+      <form id="form-budget" class="space-y-4" onsubmit="calcBudget(event)">
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1">Monthly Take-Home Income (₹)</label>
+          <input type="number" id="bud-income" value="80000" min="1000" step="1000"
+            class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-xl text-sm transition-colors">
+          Plan My Budget →
+        </button>
+      </form>
+    </div>
+    <div id="result-budget" class="bg-gradient-to-br from-teal-50 to-cyan-50 rounded-2xl border border-teal-100 p-6 flex items-center justify-center">
+      <p class="text-gray-400 text-sm">Fill in the form and click Calculate</p>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Tab switching ──────────────────────────────────────────────────
+function switchTab(id) {
+  document.querySelectorAll('.calc-panel').forEach(p => p.classList.add('hidden'));
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    b.classList.remove('bg-blue-600', 'text-white', 'border-blue-600');
+    b.classList.add('bg-white', 'text-gray-600', 'border-gray-200');
+  });
+  document.getElementById('calc-' + id).classList.remove('hidden');
+  const btn = document.getElementById('tab-' + id);
+  btn.classList.add('bg-blue-600', 'text-white', 'border-blue-600');
+  btn.classList.remove('bg-white', 'text-gray-600', 'border-gray-200');
+}
+
+// ── Helpers ────────────────────────────────────────────────────────
+const fmt = n => '₹' + Number(n).toLocaleString('en-IN', {maximumFractionDigits: 0});
+const fmtPct = n => Number(n).toFixed(2) + '%';
+
+function resultCard(fields, accent = 'blue') {
+  const rows = fields.map(([label, value, highlight]) => `
+    <div class="flex items-center justify-between py-3 border-b border-${accent}-100 last:border-0">
+      <span class="text-sm text-gray-600">${label}</span>
+      <span class="text-sm font-bold ${highlight ? 'text-'+accent+'-700 text-lg' : 'text-gray-900'}">${value}</span>
+    </div>`).join('');
+  return `<div class="w-full space-y-0">${rows}</div>`;
+}
+
+function showError(resultId, msg) {
+  document.getElementById(resultId).innerHTML =
+    `<div class="text-red-600 text-sm bg-red-50 rounded-lg p-4 w-full">❌ ${msg}</div>`;
+}
+
+// ── 1. Compound Interest ───────────────────────────────────────────
+async function calcCompound(e) {
+  e.preventDefault();
+  const body = {
+    principal: +document.getElementById('ci-principal').value,
+    annual_rate_pct: +document.getElementById('ci-rate').value,
+    years: +document.getElementById('ci-years').value,
+    compounds_per_year: +document.getElementById('ci-compounds').value,
+  };
+  try {
+    const r = await fetch('/api/v1/calculator/compound-interest', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.message || 'Error');
+    document.getElementById('result-compound').innerHTML = resultCard([
+      ['Principal',             fmt(d.principal)],
+      ['Total Amount',          fmt(d.total_amount), true],
+      ['Interest Earned',       fmt(d.interest_earned)],
+      ['Annual Rate',           fmtPct(d.annual_rate_pct)],
+      ['Effective Annual Rate', fmtPct(d.effective_annual_rate_pct)],
+      ['Period',                `${d.years} years`],
+    ], 'blue');
+  } catch(err) { showError('result-compound', err.message); }
+}
+
+// ── 2. Loan EMI ────────────────────────────────────────────────────
+async function calcEMI(e) {
+  e.preventDefault();
+  const body = {
+    principal: +document.getElementById('emi-principal').value,
+    annual_rate_pct: +document.getElementById('emi-rate').value,
+    tenure_months: +document.getElementById('emi-months').value,
+  };
+  try {
+    const r = await fetch('/api/v1/calculator/loan-emi', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.message || 'Error');
+    document.getElementById('result-emi').innerHTML = resultCard([
+      ['Monthly EMI',    fmt(d.emi), true],
+      ['Total Payment',  fmt(d.total_payment)],
+      ['Total Interest', fmt(d.total_interest)],
+      ['Loan Amount',    fmt(d.principal)],
+      ['Tenure',         `${body.tenure_months} months (${Math.round(body.tenure_months/12)} yrs)`],
+      ['Annual Rate',    fmtPct(d.annual_rate_pct)],
+    ], 'purple');
+  } catch(err) { showError('result-emi', err.message); }
+}
+
+// ── 3. SIP ─────────────────────────────────────────────────────────
+async function calcSIP(e) {
+  e.preventDefault();
+  const years = +document.getElementById('sip-years').value;
+  const body = {
+    monthly_investment: +document.getElementById('sip-monthly').value,
+    annual_rate_pct: +document.getElementById('sip-rate').value,
+    years: years,
+  };
+  try {
+    const r = await fetch('/api/v1/calculator/sip', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.message || 'Error');
+    const totalInvested = body.monthly_investment * years * 12;
+    const futureValue = d.future_value || d.total_amount || Object.values(d).find(v => typeof v === 'string' && +v > totalInvested);
+    document.getElementById('result-sip').innerHTML = resultCard([
+      ['Future Value',   fmt(futureValue || d.future_value), true],
+      ['Total Invested', fmt(totalInvested)],
+      ['Wealth Gained',  fmt((+futureValue || 0) - totalInvested)],
+      ['Monthly SIP',    fmt(body.monthly_investment)],
+      ['Return Rate',    fmtPct(body.annual_rate_pct)],
+      ['Period',         `${years} years`],
+    ], 'green');
+  } catch(err) { showError('result-sip', err.message); }
+}
+
+// ── 4. Savings Projection ──────────────────────────────────────────
+async function calcSavings(e) {
+  e.preventDefault();
+  const body = {
+    monthly_contribution: +document.getElementById('sv-monthly').value,
+    current_savings: +document.getElementById('sv-current').value,
+    annual_return_pct: +document.getElementById('sv-rate').value,
+    years: +document.getElementById('sv-years').value,
+  };
+  try {
+    const r = await fetch('/api/v1/calculator/savings-projection', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.message || 'Error');
+    document.getElementById('result-savings').innerHTML = resultCard([
+      ['Future Value (nominal)',    fmt(d.nominal_future_value), true],
+      ['Real Value (after inflation)', fmt(d.real_future_value)],
+      ['Total Contributed',        fmt(d.total_contributed)],
+      ['Inflation Erosion',        fmt(d.inflation_erosion)],
+      ['Annual Return',            fmtPct(d.annual_return_pct)],
+      ['Period',                   `${body.years} years`],
+    ], 'yellow');
+  } catch(err) { showError('result-savings', err.message); }
+}
+
+// ── 5. Tax Estimate ────────────────────────────────────────────────
+async function calcTax(e) {
+  e.preventDefault();
+  const income = +document.getElementById('tax-income').value;
+  const deductions = +document.getElementById('tax-deductions').value;
+  const body = {
+    gross_income: income,
+    additional_deductions: deductions,
+  };
+  try {
+    const r = await fetch('/api/v1/calculator/tax-estimate', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.message || 'Error');
+    document.getElementById('result-tax').innerHTML = resultCard([
+      ['Total Tax',          fmt(d.total_tax), true],
+      ['Take-Home Pay',      fmt(d.take_home)],
+      ['Gross Income',       fmt(d.gross_income)],
+      ['Taxable Income',     fmt(d.taxable_income)],
+      ['Standard Deduction', fmt(d.standard_deduction)],
+      ['Effective Rate',     fmtPct(d.effective_rate_pct)],
+    ], 'red');
+  } catch(err) { showError('result-tax', err.message); }
+}
+
+// ── 6. Budget Planner ──────────────────────────────────────────────
+async function calcBudget(e) {
+  e.preventDefault();
+  const income = +document.getElementById('bud-income').value;
+  const body = { monthly_income: income };
+  try {
+    const r = await fetch('/api/v1/calculator/budget-planner', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.message || 'Error');
+    document.getElementById('result-budget').innerHTML = `
+      <div class="w-full space-y-4">
+        <div class="text-center mb-2">
+          <div class="text-xs text-gray-500 mb-1">Monthly Income</div>
+          <div class="text-2xl font-bold text-gray-900">${fmt(income)}</div>
+        </div>
+        <div class="grid grid-cols-3 gap-3 text-center">
+          <div class="bg-blue-100 rounded-xl p-4">
+            <div class="text-2xl mb-1">🏠</div>
+            <div class="text-xs text-blue-700 font-semibold mb-1">NEEDS</div>
+            <div class="text-base font-bold text-blue-800">${fmt(d.needs_50pct)}</div>
+            <div class="text-xs text-blue-600">50%</div>
+          </div>
+          <div class="bg-purple-100 rounded-xl p-4">
+            <div class="text-2xl mb-1">🎉</div>
+            <div class="text-xs text-purple-700 font-semibold mb-1">WANTS</div>
+            <div class="text-base font-bold text-purple-800">${fmt(d.wants_30pct)}</div>
+            <div class="text-xs text-purple-600">30%</div>
+          </div>
+          <div class="bg-green-100 rounded-xl p-4">
+            <div class="text-2xl mb-1">💰</div>
+            <div class="text-xs text-green-700 font-semibold mb-1">SAVINGS</div>
+            <div class="text-base font-bold text-green-800">${fmt(d.savings_20pct)}</div>
+            <div class="text-xs text-green-600">20%</div>
+          </div>
+        </div>
+        <p class="text-xs text-gray-500 text-center">Needs: rent, food, utilities · Wants: dining, entertainment · Savings: investments, emergency fund</p>
+      </div>`;
+  } catch(err) { showError('result-budget', err.message); }
+}
+</script>
+{% endblock %}

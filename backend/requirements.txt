@@ -1,3 +1,9 @@
+# =============================================================================
+# Production Dependencies — Finance Calculator
+# Generated with: pip freeze (from .venv)
+# Dev tools (pytest, black, ruff, mypy) are included but can be
+# excluded in production by using a separate requirements-prod.txt
+# =============================================================================
 aiofiles==24.1.0
 alembic==1.14.0
 annotated-types==0.7.0
@@ -15,7 +21,9 @@ coverage==7.14.1
 cryptography==48.0.0
 Deprecated==1.3.1
 distlib==0.4.0
+dnspython==2.8.0
 ecdsa==0.19.2
+email-validator==2.3.0
 et_xmlfile==2.0.0
 factory_boy==3.3.1
 Faker==33.3.1
@@ -72,8 +80,12 @@ SQLAlchemy==2.0.36
 starlette==0.41.3
 structlog==24.4.0
 text-unidecode==1.3
+types-cffi==2.0.0.20260518
 types-passlib==1.7.7.20260211
+types-pyOpenSSL==24.1.0.20240722
 types-python-dateutil==2.9.0.20260518
+types-redis==4.6.0.20241004
+types-setuptools==82.0.0.20260518
 typing_extensions==4.15.0
 uvicorn==0.32.1
 uvloop==0.22.1
@@ -81,3 +93,4 @@ virtualenv==21.3.3
 watchfiles==1.2.0
 websockets==16.0
 wrapt==2.2.1
+pdfplumber==0.11.9

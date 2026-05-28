@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Finance Calculator{% endblock %}</title>
+
+  <!-- Tailwind CSS (CDN — use compiled version in production) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: { 50:'#eff6ff', 100:'#dbeafe', 500:'#3b82f6', 600:'#2563eb', 700:'#1d4ed8' },
+            success: { 50:'#f0fdf4', 500:'#22c55e', 700:'#15803d' },
+            danger:  { 50:'#fef2f2', 500:'#ef4444', 700:'#b91c1c' },
+            warning: { 50:'#fffbeb', 500:'#f59e0b', 700:'#b45309' },
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- HTMX — hypermedia for the web (no JS framework needed!) -->
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+
+  <!-- Chart.js — beautiful charts -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <style>
+    /* HTMX loading indicator */
+    .htmx-indicator { display: none; }
+    .htmx-request .htmx-indicator { display: inline; }
+    .htmx-request.htmx-indicator { display: inline; }
+    /* Smooth transitions on HTMX swaps */
+    .htmx-swapping { opacity: 0; transition: opacity 0.15s ease-out; }
+  </style>
+
+  {% block head %}{% endblock %}
+</head>
+<body class="h-full bg-gray-50 font-sans antialiased">
+
+{% block body %}
+<div class="flex h-screen overflow-hidden">
+
+  <!-- ── SIDEBAR ─────────────────────────────────────────────────────────── -->
+  <aside class="hidden md:flex md:flex-col w-64 bg-gray-900 text-white flex-shrink-0">
+    <!-- Logo -->
+    <div class="flex items-center gap-3 px-6 py-5 border-b border-gray-700">
+      <span class="text-2xl">💰</span>
+      <div>
+        <div class="font-bold text-white text-sm leading-tight">Finance</div>
+        <div class="text-gray-400 text-xs">Calculator</div>
+      </div>
+    </div>
+
+    <!-- Nav links -->
+    <nav class="flex-1 px-4 py-4 space-y-1 overflow-y-auto">
+      {% set nav_items = [
+        ("/dashboard", "📊", "Dashboard"),
+        ("/expenses",  "💸", "Expenses"),
+        ("/import",    "📤", "Import CSV"),
+      ] %}
+      {% for href, icon, label in nav_items %}
+      <a href="{{ href }}"
+         class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
+                {% if request.url.path == href %}
+                  bg-blue-600 text-white
+                {% else %}
+                  text-gray-300 hover:bg-gray-700 hover:text-white
+                {% endif %}">
+        <span class="text-base">{{ icon }}</span>
+        {{ label }}
+      </a>
+      {% endfor %}
+
+      <!-- Calculator section -->
+      <div class="pt-4 pb-1">
+        <p class="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Tools</p>
+      </div>
+      <a href="/calculator"
+         class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
+                {% if request.url.path == '/calculator' %}
+                  bg-blue-600 text-white
+                {% else %}
+                  text-gray-300 hover:bg-gray-700 hover:text-white
+                {% endif %}">
+        <span class="text-base">🧮</span> Finance Calculators
+      </a>
+    </nav>
+
+    <!-- User info + logout -->
+    <div class="px-4 py-4 border-t border-gray-700">
+      <div class="flex items-center gap-3 mb-3">
+        <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-sm font-bold">
+          {{ user.username[0].upper() }}
+        </div>
+        <div class="min-w-0">
+          <div class="text-sm font-medium text-white truncate">{{ user.username }}</div>
+          <div class="text-xs text-gray-400 truncate">{{ user.role }}</div>
+        </div>
+      </div>
+      <a href="/web/logout"
+         class="flex items-center gap-2 px-3 py-2 text-xs text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors">
+        <span>🚪</span> Sign out
+      </a>
+    </div>
+  </aside>
+
+  <!-- ── MAIN CONTENT ────────────────────────────────────────────────────── -->
+  <main class="flex-1 flex flex-col overflow-hidden">
+    <!-- Top bar -->
+    <header class="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between flex-shrink-0">
+      <div>
+        <h1 class="text-lg font-semibold text-gray-900">{% block page_title %}Dashboard{% endblock %}</h1>
+        <p class="text-sm text-gray-500">{% block page_subtitle %}{% endblock %}</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <!-- Mobile menu placeholder -->
+        <span class="text-sm text-gray-400 hidden sm:block">{{ user.email }}</span>
+      </div>
+    </header>
+
+    <!-- Page content (scrollable) -->
+    <div class="flex-1 overflow-y-auto">
+      <div class="p-6">
+        {% block content %}{% endblock %}
+      </div>
+    </div>
+  </main>
+
+</div>
+{% endblock %}
+
+<!-- Flash messages (toast notifications) -->
+{% if request.query_params.get('success') %}
+<div id="toast"
+     class="fixed bottom-4 right-4 z-50 bg-green-500 text-white px-5 py-3 rounded-xl shadow-lg text-sm font-medium"
+     x-data="{ show: true }" style="animation: slideIn 0.3s ease;">
+  ✅ {{ request.query_params.get('success') }}
+</div>
+<script>setTimeout(() => document.getElementById('toast')?.remove(), 4000)</script>
+{% endif %}
+
+{% block scripts %}{% endblock %}
+</body>
+</html>

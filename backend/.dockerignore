@@ -1,0 +1,63 @@
+# =============================================================================
+# .dockerignore — Files excluded from the Docker build context
+# =============================================================================
+# Why this file matters:
+#   Docker sends the entire build context (this directory) to the Docker daemon.
+#   Large directories (.venv, __pycache__) slow down every build unnecessarily.
+#   .dockerignore excludes files from the build context (like .gitignore for Docker).
+#
+# Common pitfall: forgetting .venv here → Docker sends 300MB+ of packages
+# even though the Dockerfile creates its own venv in the builder stage.
+# =============================================================================
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+
+# Virtual environments (CRITICAL — very large, not needed in Docker)
+.venv/
+venv/
+env/
+.env.local
+
+# Test artifacts and coverage
+.pytest_cache/
+.coverage
+coverage_html/
+htmlcov/
+.mypy_cache/
+
+# Development tools
+.git/
+.gitignore
+.pre-commit-config.yaml
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Documentation (not needed at runtime)
+docs/
+
+# Build artifacts
+dist/
+build/
+
+# Docker itself
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db

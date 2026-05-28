@@ -94,6 +94,15 @@ async def init_db() -> None:
     """
     global _engine, _session_factory
 
+    # Import ALL models here to ensure SQLAlchemy mapper initializes correctly.
+    # SQLAlchemy needs ALL models imported before the first session/query,
+    # because relationship strings ("Expense", "User") are resolved at mapper
+    # initialization time. Without this import, you get:
+    #   "expression 'Expense' failed to locate a name"
+    # This is the standard solution for modular SQLAlchemy applications.
+    import app.expenses.models  # noqa: F401
+    import app.users.models  # noqa: F401
+
     _engine = _create_engine()
 
     # Session factory: creates new AsyncSession objects on demand
@@ -108,6 +117,12 @@ async def init_db() -> None:
     )
 
     logger.info("database_engine_initialized", pool_size=settings.database_pool_size)
+
+    # Seed default categories (idempotent — skips if already seeded)
+    from app.expenses.service import seed_default_categories
+
+    async with _session_factory() as session:
+        await seed_default_categories(session)
 
 
 async def close_db() -> None:

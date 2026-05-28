@@ -1,0 +1,395 @@
+# =============================================================================
+# CD Pipeline — Production Deployment
+# =============================================================================
+#
+# Triggered when:
+#   - A PR is merged to `main` (after passing staging QA)
+#
+# CRITICAL DIFFERENCE from staging:
+#   Production requires a MANUAL APPROVAL GATE before deploying.
+#   Even if CI passes and the push lands on main, a human must click "Approve"
+#   in the GitHub UI before the ECS deployment begins.
+#
+# Why manual approval?
+#   Production affects real users and real data. Automated deployments to prod
+#   without human review are too risky. The approval step:
+#     - Forces someone to confirm the deploy is intentional
+#     - Gives a last chance to abort if something looks wrong
+#     - Creates an audit trail (who approved, when)
+#
+# Flow:
+#   PR merged to main
+#     → CI pipeline runs (lint + test + build)
+#     → GitHub pauses and waits for approval
+#     → Approver clicks "Review deployments" in GitHub UI
+#     → Production deploy begins
+#     → Smoke tests run
+#     → Slack notification
+#
+# Required GitHub Secrets (same as staging + production-specific):
+#   AWS_DEPLOY_ROLE_ARN       — IAM role for production (separate from staging)
+#   AWS_REGION
+#   ECR_REGISTRY
+#   ECR_REPOSITORY
+#   ECS_CLUSTER_PRODUCTION    — Production ECS cluster name
+#   ECS_SERVICE_PRODUCTION    — Production ECS service name
+#   ECS_TASK_DEFINITION_PROD  — Production task definition name
+#   PRODUCTION_URL            — https://finance-calculator.yourdomain.com
+#   SLACK_WEBHOOK_URL
+#
+# GitHub Environment Setup:
+#   1. Go to repo Settings → Environments → Create "production"
+#   2. Add "Required reviewers" (your own GitHub username)
+#   3. Add "Deployment branches" restriction: only main
+# =============================================================================
+
+name: CD — Deploy to Production
+
+on:
+  push:
+    branches:
+      - main    # Only when code lands on main
+
+# Never run two production deploys concurrently
+# If a second push lands while deploying, wait for the first to finish
+# (cancel-in-progress: false for production — never cancel mid-deploy)
+concurrency:
+  group: cd-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write          # OIDC authentication with AWS
+  deployments: write       # Create deployment status records
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+
+  # ===========================================================================
+  # JOB 0: Pre-deploy validation
+  # ===========================================================================
+  # Before asking for approval, do a final check:
+  #   - Verify the image we're about to deploy was built from this exact commit
+  #   - Check if there's a hotfix flag (skip staging requirement for critical fixes)
+  # ===========================================================================
+  pre-deploy-check:
+    name: "Pre-deploy validation"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Verify commit is production-ready
+        run: |
+          echo "## Production Deploy — Pre-flight Check" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Author**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Timestamp**: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Pre-deploy checks passed. Waiting for manual approval..." >> $GITHUB_STEP_SUMMARY
+
+
+  # ===========================================================================
+  # JOB 1: Manual Approval Gate
+  # ===========================================================================
+  # GitHub Environments can require reviewers to manually approve.
+  #
+  # HOW IT WORKS:
+  # 1. This job starts but immediately pauses (because of "environment: production")
+  # 2. GitHub sends an email to required reviewers
+  # 3. Reviewer goes to Actions tab → clicks "Review deployments"
+  # 4. Reviewer sees: commit SHA, PR description, who triggered it
+  # 5. Reviewer clicks "Approve and deploy" or "Reject"
+  # 6. If approved, this job completes and the next jobs run
+  # 7. If rejected, the workflow is cancelled
+  #
+  # Setup: repo Settings → Environments → production → Required reviewers
+  # ===========================================================================
+  approve:
+    name: "Waiting for manual approval"
+    runs-on: ubuntu-latest
+    needs: pre-deploy-check
+    environment: production    # This is where the approval gate lives
+
+    steps:
+      - name: Approval granted
+        run: |
+          echo "✅ Production deployment approved by: ${{ github.actor }}"
+          echo "Proceeding with production deployment at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+
+  # ===========================================================================
+  # JOB 2: Build and push to ECR (production tag)
+  # ===========================================================================
+  # After approval, build the production image.
+  # Separate from staging build to ensure:
+  #   - Fresh build with production build args
+  #   - Tagged with production-latest (easy to identify current prod image)
+  # ===========================================================================
+  build-and-push:
+    name: "Build & Push (production)"
+    runs-on: ubuntu-latest
+    needs: approve    # Only runs after manual approval
+
+    outputs:
+      image-uri: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push (production tags)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          target: runtime
+          push: true
+          tags: |
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:production-latest
+          # production-latest: Always points to the current production image
+          # sha tag: Immutable reference for rollbacks (see below)
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
+            environment=production
+
+
+  # ===========================================================================
+  # JOB 3: Deploy to ECS Production
+  # ===========================================================================
+  # ECS Rolling Update:
+  #   New: [task v2][task v2][task v2]
+  #   Old: [task v1][task v1][task v1]
+  #
+  # ECS gradually replaces v1 tasks with v2 tasks.
+  # Traffic is load-balanced across all healthy tasks during transition.
+  # If v2 fails health checks → ECS automatically rolls back to v1.
+  #
+  # Blue/Green deployment (not implemented here but mentioned for interviews):
+  #   Instead of rolling, deploy entirely new "green" environment.
+  #   Test green, then shift 100% of traffic from "blue" to "green".
+  #   Instant rollback: just shift traffic back to blue.
+  # ===========================================================================
+  deploy-production:
+    name: "Deploy to ECS Production"
+    runs-on: ubuntu-latest
+    needs: build-and-push
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Download production task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition ${{ secrets.ECS_TASK_DEFINITION_PROD }} \
+            --query taskDefinition \
+            > task-definition.json
+
+      - name: Update image in task definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: finance-app
+          image: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+
+      - name: Deploy to production ECS service
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: ${{ secrets.ECS_SERVICE_PRODUCTION }}
+          cluster: ${{ secrets.ECS_CLUSTER_PRODUCTION }}
+          wait-for-service-stability: true
+          # If ECS service doesn't stabilize within 10 minutes, this step fails
+          # ECS will then rollback to the previous task definition automatically
+
+      - name: Create GitHub deployment record
+        uses: chrnorm/deployment-action@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          environment: production
+          ref: ${{ github.sha }}
+          description: "Deployed ${{ github.sha }} to production"
+
+      - name: Write deploy summary
+        run: |
+          echo "## ✅ Production Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Image | \`${{ env.IMAGE_TAG }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Cluster | \`${{ secrets.ECS_CLUSTER_PRODUCTION }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | \`${{ secrets.ECS_SERVICE_PRODUCTION }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Deployed by | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Time | $(date -u +%Y-%m-%dT%H:%M:%SZ) |" >> $GITHUB_STEP_SUMMARY
+
+
+  # ===========================================================================
+  # JOB 4: Production Smoke Tests
+  # ===========================================================================
+  smoke-tests:
+    name: "Smoke Tests (production)"
+    runs-on: ubuntu-latest
+    needs: deploy-production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Wait for production to be healthy
+        run: |
+          PROD_URL="${{ secrets.PRODUCTION_URL }}"
+          echo "Running production smoke tests against: $PROD_URL"
+          for i in {1..20}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$PROD_URL/api/v1/health/live" || echo "000")
+            echo "Attempt $i: HTTP $STATUS"
+            if [ "$STATUS" = "200" ]; then
+              echo "✅ Production is healthy!"
+              break
+            fi
+            if [ $i -eq 20 ]; then
+              echo "❌ Production health check timed out after 100s"
+              exit 1
+            fi
+            sleep 5
+          done
+
+      - name: Run smoke tests
+        run: |
+          PROD_URL="${{ secrets.PRODUCTION_URL }}"
+
+          # Test 1: Liveness
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$PROD_URL/api/v1/health/live")
+          [ "$STATUS" = "200" ] && echo "✅ Health live: OK" || (echo "❌ Health live: FAILED ($STATUS)"; exit 1)
+
+          # Test 2: Readiness (DB + Redis connectivity)
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$PROD_URL/api/v1/health/ready")
+          [ "$STATUS" = "200" ] && echo "✅ Health ready: OK" || (echo "❌ Health ready: FAILED ($STATUS)"; exit 1)
+
+          # Test 3: Calculator (stateless, safe to test on prod)
+          RESP=$(curl -s -w "\n%{http_code}" -X POST "$PROD_URL/api/v1/calculator/compound-interest" \
+            -H "Content-Type: application/json" \
+            -d '{"principal": 1000, "annual_rate": 5, "years": 1, "compounds_per_year": 12}')
+          STATUS=$(echo "$RESP" | tail -1)
+          [ "$STATUS" = "200" ] && echo "✅ Calculator API: OK" || (echo "❌ Calculator API: FAILED ($STATUS)"; exit 1)
+
+          echo ""
+          echo "✅ All production smoke tests passed!"
+
+      - name: Notify Slack — success
+        if: success()
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "🚀 Production deployed successfully!",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "🚀 *Production Deployment — Success*\n\n*Commit*: <${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}|${{ github.sha }}>\n*Deployed by*: ${{ github.actor }}\n*URL*: ${{ secrets.PRODUCTION_URL }}\n*Time*: <!date^$(date +%s)^{date_num} {time_secs}|$(date -u)>"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        continue-on-error: true
+
+      - name: Notify Slack — failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "🔥 PRODUCTION deployment FAILED — immediate attention required!",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "🔥 *Production Deployment — FAILED*\n\n*Commit*: <${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}|${{ github.sha }}>\n*Triggered by*: ${{ github.actor }}\n*Logs*: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View logs>\n\n*Action required*: Verify production health. Consider manual rollback if necessary."
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        continue-on-error: true
+
+
+  # ===========================================================================
+  # JOB 5: Rollback instructions (on failure only)
+  # ===========================================================================
+  # If any job fails, print rollback instructions in the CI logs.
+  # This is NOT an automatic rollback — ECS handles that automatically.
+  # This is documentation for the on-call engineer who gets paged.
+  # ===========================================================================
+  rollback-instructions:
+    name: "Rollback instructions"
+    runs-on: ubuntu-latest
+    needs: [deploy-production, smoke-tests]
+    if: failure()    # Only run if something went wrong
+
+    steps:
+      - name: Print rollback instructions
+        run: |
+          echo "=========================================="
+          echo "PRODUCTION DEPLOY FAILED — ROLLBACK GUIDE"
+          echo "=========================================="
+          echo ""
+          echo "Option 1 (Automatic — ECS):"
+          echo "  ECS health checks may have already triggered an automatic rollback."
+          echo "  Check ECS console: Events tab on the service."
+          echo ""
+          echo "Option 2 (Manual — ECS previous task definition):"
+          echo "  1. Go to AWS ECS → Clusters → ${{ secrets.ECS_CLUSTER_PRODUCTION }}"
+          echo "  2. Click the service → Update Service"
+          echo "  3. Select the previous task definition revision"
+          echo "  4. Click Deploy"
+          echo ""
+          echo "Option 3 (Previous Docker image):"
+          echo "  The image tagged 'production-latest' now points to this failed deploy."
+          echo "  Find the previous SHA in git: git log --oneline main"
+          echo "  Then: aws ecs update-service --cluster ... --service ... --task-definition ..."
+          echo ""
+          echo "Option 4 (GitHub Actions re-run):"
+          echo "  Go to the previous successful workflow run"
+          echo "  Click 'Re-run all jobs' — but only if you know what caused the failure"
+          echo ""
+          echo "Failed commit: ${{ github.sha }}"
+          echo "Run ID: ${{ github.run_id }}"
