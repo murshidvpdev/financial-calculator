@@ -25,8 +25,16 @@
   <div class="flex items-center gap-2">
     <a href="/import"
        class="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-lg text-sm font-semibold transition-colors shadow-sm">
-      📤 Import CSV
+      📤 Import
     </a>
+
+    <!-- Clear All button with confirmation dialog -->
+    <button
+      onclick="document.getElementById('clear-all-modal').classList.remove('hidden')"
+      class="flex items-center gap-2 px-4 py-2 bg-white border border-red-300 hover:bg-red-50 text-red-600 rounded-lg text-sm font-semibold transition-colors shadow-sm">
+      🗑️ Clear All
+    </button>
+
     <button
       onclick="document.getElementById('add-expense-modal').classList.remove('hidden')"
       class="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition-colors shadow-sm"
@@ -34,6 +42,7 @@
       <span class="text-lg leading-none">+</span> Add Expense
     </button>
   </div>
+
 </div>
 
 <!-- ── FEEDBACK (HTMX swaps result here) ───────────────────────────────── -->
@@ -144,6 +153,48 @@
     </form>
   </div>
 </div>
+
+<!-- ── CLEAR ALL CONFIRMATION MODAL ────────────────────────────────────── -->
+<div id="clear-all-modal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+    <div class="flex items-center gap-3 mb-4">
+      <span class="text-3xl">🗑️</span>
+      <div>
+        <h3 class="text-lg font-bold text-gray-900">Clear All Expenses?</h3>
+        <p class="text-sm text-gray-500">This will permanently delete all your expenses.</p>
+      </div>
+    </div>
+    <p class="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3 mb-5">
+      ⚠️ This cannot be undone. All expense data will be removed. You can re-import your statement afterwards.
+    </p>
+    <div class="flex gap-3">
+      <button
+        onclick="document.getElementById('clear-all-modal').classList.add('hidden')"
+        class="flex-1 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-sm font-semibold transition-colors">
+        Cancel
+      </button>
+      <button
+        id="clear-all-btn"
+        hx-post="/web/expenses/clear-all"
+        hx-target="#clear-result-container"
+        hx-swap="innerHTML"
+        hx-indicator="#clear-spinner"
+        onclick="document.getElementById('clear-all-modal').classList.add('hidden')"
+        class="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-semibold transition-colors">
+        <span id="clear-spinner" class="htmx-indicator">
+          <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg>
+        </span>
+        Yes, Delete Everything
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Container where the clear result toast + table refresh are injected -->
+<div id="clear-result-container"></div>
 
 {% endblock %}
 

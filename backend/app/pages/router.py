@@ -746,3 +746,35 @@ async def web_delete_expense(
         return HTMLResponse(
             '<td colspan="5" class="px-6 py-3 text-red-500 text-sm">Failed to delete — try again</td>'
         )
+
+
+@router.post("/web/expenses/clear-all")
+async def web_clear_all_expenses(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_user_from_cookie),
+):
+    """Hard-delete ALL expenses for the current user (no soft delete — truly wipe)."""
+    if not user:
+        return HTMLResponse("", status_code=401)
+
+    from sqlalchemy import delete
+
+    from app.expenses.models import Expense
+
+    result = await db.execute(delete(Expense).where(Expense.user_id == user.id))
+    await db.commit()
+    deleted = result.rowcount  # type: ignore[attr-defined]
+
+    return HTMLResponse(f"""
+<div id="clear-result"
+     class="fixed bottom-6 right-6 z-50 flex items-center gap-3 px-5 py-3
+            bg-green-600 text-white rounded-xl shadow-lg text-sm font-semibold"
+     _="on load wait 3s then remove me">
+  🗑️ Cleared {deleted} expense{'s' if deleted != 1 else ''}. Import fresh data anytime.
+</div>
+<div hx-get="/web/expenses-table"
+     hx-trigger="load"
+     hx-target="#expenses-table-container"
+     hx-swap="innerHTML"></div>
+""")
