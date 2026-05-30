@@ -1,0 +1,128 @@
+# =============================================================================
+# INGRESS — External HTTP/HTTPS traffic routing
+# =============================================================================
+# An Ingress is a collection of routing rules that govern how external traffic
+# reaches Services inside the cluster.
+#
+# Requires an Ingress Controller to be running in the cluster.
+# We use nginx-ingress (the most common choice).
+#
+# Install nginx-ingress on minikube:
+#   minikube addons enable ingress
+#
+# Install nginx-ingress on EKS (via Helm):
+#   helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+#   helm install ingress-nginx ingress-nginx/ingress-nginx
+#
+# Ingress vs LoadBalancer Service:
+#   LoadBalancer Service → 1 cloud LB per Service (expensive: ~$20/month each)
+#   Ingress → 1 cloud LB total, routes to many Services based on path/host
+#
+# TLS termination: the Ingress Controller handles HTTPS.
+# The app container only speaks HTTP internally (simpler, no cert management in app).
+#
+# On AWS EKS: nginx-ingress provisions an AWS NLB automatically.
+# The NLB IP is assigned to the Ingress after ~2 minutes.
+# =============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: finance-app-ingress
+  namespace: finance-calculator
+  labels:
+    app.kubernetes.io/name: finance-calculator
+    app.kubernetes.io/component: ingress
+  annotations:
+    # ── Ingress class ─────────────────────────────────────────────────────────
+    kubernetes.io/ingress.class: "nginx"
+
+    # ── TLS: auto-provision Let's Encrypt certificate ─────────────────────────
+    # cert-manager watches for this annotation and provisions a free TLS cert.
+    # Install cert-manager: kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.14.0/cert-manager.yaml
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+
+    # ── HTTPS redirect ────────────────────────────────────────────────────────
+    # Force all HTTP → HTTPS (308 permanent redirect)
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+
+    # ── Security headers ──────────────────────────────────────────────────────
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+      add_header X-Frame-Options "SAMEORIGIN" always;
+      add_header X-Content-Type-Options "nosniff" always;
+      add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+      add_header X-XSS-Protection "1; mode=block" always;
+
+    # ── Rate limiting ─────────────────────────────────────────────────────────
+    # Limit each IP to 20 requests/second (in addition to app-level slowapi limits)
+    nginx.ingress.kubernetes.io/limit-rps: "20"
+
+    # ── Request size limit ─────────────────────────────────────────────────────
+    # Max upload size for CSV/PDF/Excel imports (5MB should be plenty)
+    nginx.ingress.kubernetes.io/proxy-body-size: "5m"
+
+    # ── Timeouts ─────────────────────────────────────────────────────────────
+    # PDF parsing can take a few seconds for large files
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+
+spec:
+  # ── TLS configuration ─────────────────────────────────────────────────────────
+  # cert-manager automatically creates the `finance-app-tls` Secret with the cert.
+  # Replace `finance.yourdomain.com` with your actual domain.
+  tls:
+    - hosts:
+        - finance.yourdomain.com
+      secretName: finance-app-tls  # cert-manager stores the cert here
+
+  # ── Routing rules ─────────────────────────────────────────────────────────────
+  rules:
+    - host: finance.yourdomain.com
+      http:
+        paths:
+          # Route ALL traffic to the finance-app Service.
+          # PathType: Prefix = matches /anything
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: finance-app-service
+                port:
+                  number: 80
+
+---
+# =============================================================================
+# CLUSTER ISSUER — Let's Encrypt TLS certificate provisioner
+# =============================================================================
+# cert-manager uses this ClusterIssuer to request free TLS certificates from
+# Let's Encrypt using the ACME HTTP-01 challenge.
+#
+# How it works:
+#   1. cert-manager sees the ingress annotation `cert-manager.io/cluster-issuer`
+#   2. It creates a Certificate resource targeting this issuer
+#   3. Let's Encrypt sends an HTTP challenge to /.well-known/acme-challenge/...
+#   4. cert-manager handles the challenge response
+#   5. Let's Encrypt issues a 90-day cert (auto-renewed by cert-manager)
+#
+# Requires cert-manager to be installed in the cluster.
+# =============================================================================
+
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    # Let's Encrypt production ACME server
+    server: https://acme-v02.api.letsencrypt.org/directory
+    # Replace with your email — Let's Encrypt sends expiry warnings here
+    email: murshidveypey790@gmail.com
+    # cert-manager stores the ACME account key in this Secret
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - http01:
+          ingress:
+            class: nginx

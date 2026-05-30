@@ -1,0 +1,207 @@
+# =============================================================================
+# DEPLOYMENT — The main application workload
+# =============================================================================
+# A Deployment manages a set of identical Pods (replicas).
+# It ensures the desired number of Pods are always running and handles
+# rolling updates and rollbacks.
+#
+# Key concepts illustrated here:
+#   - replicas: run 3 copies for high availability
+#   - RollingUpdate strategy: zero-downtime deploys (new pod up before old pod down)
+#   - resource requests/limits: prevents one pod from starving others
+#   - liveness probe: restart the pod if it hangs/deadlocks
+#   - readiness probe: only send traffic when pod is fully ready
+#   - envFrom: inject ConfigMap + Secret as env vars
+#   - securityContext: run as non-root (defense in depth)
+# =============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: finance-app
+  namespace: finance-calculator
+  labels:
+    app.kubernetes.io/name: finance-calculator
+    app.kubernetes.io/component: api
+    app.kubernetes.io/version: "1.0.0"
+  annotations:
+    # Used by kubectl rollout to track change cause
+    kubernetes.io/change-cause: "Initial deployment"
+spec:
+  # ── Replica count ──────────────────────────────────────────────────────────────
+  # 3 replicas → tolerates 1 pod failure with no downtime (2 still serve traffic)
+  # In production: set based on load testing results + HPA (see hpa.yaml)
+  replicas: 3
+
+  # ── Pod selector ──────────────────────────────────────────────────────────────
+  # The Deployment uses this to identify which Pods it owns.
+  # Must match the labels in spec.template.metadata.labels.
+  selector:
+    matchLabels:
+      app: finance-app
+
+  # ── Update strategy ───────────────────────────────────────────────────────────
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # maxUnavailable: how many pods can be DOWN during update
+      # "1" means: always keep at least 2 pods running (for 3 replicas)
+      maxUnavailable: 1
+      # maxSurge: how many EXTRA pods can be created during update
+      # "1" means: temporarily run 4 pods during rollout (3 + 1 new)
+      maxSurge: 1
+
+  template:
+    metadata:
+      labels:
+        app: finance-app
+        app.kubernetes.io/name: finance-calculator
+        app.kubernetes.io/component: api
+      annotations:
+        # Force pod restart when ConfigMap changes (kubectl rollout restart)
+        # This hash is updated by CI/CD pipeline on each deploy
+        checksum/config: "placeholder-updated-by-ci"
+    spec:
+      # ── Security: non-root ────────────────────────────────────────────────────
+      # Our Dockerfile already sets: USER appuser (non-root, UID 1001)
+      # The Pod-level securityContext applies to ALL containers in this Pod.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+
+      # ── Graceful shutdown ─────────────────────────────────────────────────────
+      # Give the app 30s to finish in-flight requests before hard kill.
+      # FastAPI handles SIGTERM → completes current requests → exits cleanly.
+      terminationGracePeriodSeconds: 30
+
+      # ── Init container: wait for DB ───────────────────────────────────────────
+      # Pods start in parallel. The app would crash if DB isn't ready yet.
+      # This init container blocks until PostgreSQL accepts connections.
+      # Only then does the main container start.
+      initContainers:
+        - name: wait-for-db
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for PostgreSQL..."
+              until nc -z postgres-service 5432; do
+                echo "PostgreSQL not ready, retrying in 2s..."
+                sleep 2
+              done
+              echo "PostgreSQL is ready!"
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "16Mi"
+            limits:
+              cpu: "50m"
+              memory: "32Mi"
+
+      containers:
+        - name: finance-app
+          # ── Image ─────────────────────────────────────────────────────────────
+          # In production: replace with your ECR registry URL
+          # e.g. 123456789.dkr.ecr.us-east-1.amazonaws.com/finance-calculator:1.0.0
+          # CI/CD pipeline substitutes the exact image tag (never use :latest in prod)
+          image: finance-calculator:latest
+          imagePullPolicy: IfNotPresent  # Use Always in production with a registry
+
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+
+          # ── Environment variables ─────────────────────────────────────────────
+          # envFrom injects ALL keys from a ConfigMap/Secret as env vars.
+          # Individual overrides can be added with `env:` below.
+          envFrom:
+            - configMapRef:
+                name: finance-app-config
+            - secretRef:
+                name: finance-app-secret
+
+          # ── Resource management ───────────────────────────────────────────────
+          # requests: minimum guaranteed resources (used for scheduling)
+          # limits:   maximum allowed (pod is killed/throttled if exceeded)
+          #
+          # CPU is compressible: throttled if over limit (no kill)
+          # Memory is NOT compressible: OOMKilled if over limit (pod restarts)
+          #
+          # Tune these based on: `kubectl top pods -n finance-calculator`
+          resources:
+            requests:
+              cpu: "100m"      # 0.1 CPU core — enough for idle FastAPI
+              memory: "256Mi"  # 256 MB — Python + FastAPI baseline
+            limits:
+              cpu: "500m"      # 0.5 CPU core — handle bursts
+              memory: "512Mi"  # 512 MB — cap to prevent runaway memory leaks
+
+          # ── Liveness probe ────────────────────────────────────────────────────
+          # If this fails: Kubernetes RESTARTS the pod.
+          # Use for: detecting deadlocks, hung processes, unrecoverable states.
+          # Our /live endpoint just returns {"status": "alive"} — very fast.
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health/live
+              port: 8000
+            initialDelaySeconds: 15   # Wait 15s before first check (app startup time)
+            periodSeconds: 20          # Check every 20 seconds
+            timeoutSeconds: 5          # Fail if no response in 5s
+            failureThreshold: 3        # Restart after 3 consecutive failures (60s total)
+            successThreshold: 1
+
+          # ── Readiness probe ───────────────────────────────────────────────────
+          # If this fails: Kubernetes STOPS SENDING TRAFFIC to this pod.
+          # The pod stays running (no restart), just removed from Service endpoints.
+          # Use for: checking DB connection, dependencies, warming up caches.
+          # Our /ready endpoint checks DB + Redis connectivity.
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health/ready
+              port: 8000
+            initialDelaySeconds: 10   # Shorter than liveness (readiness checks first)
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3       # 30s of failures before marking unready
+            successThreshold: 1
+
+          # ── Startup probe ─────────────────────────────────────────────────────
+          # Disables liveness/readiness until the app has successfully started.
+          # Prevents premature liveness restarts during slow startups.
+          # FastAPI + Alembic migrations can take 20-30s on first boot.
+          startupProbe:
+            httpGet:
+              path: /api/v1/health/live
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 12      # Allow up to 60s (5s × 12) for startup
+
+          # ── Security context (container level) ────────────────────────────────
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false  # FastAPI writes temp files; set true if using tmpfs
+            capabilities:
+              drop:
+                - ALL   # Drop ALL Linux capabilities (principle of least privilege)
+
+      # ── Image pull secret ─────────────────────────────────────────────────────
+      # Needed when pulling from a private registry (ECR, Docker Hub private, etc.)
+      # Create with: kubectl create secret docker-registry ecr-secret ...
+      # imagePullSecrets:
+      #   - name: ecr-secret
+
+      # ── Topology spread ───────────────────────────────────────────────────────
+      # Spread pods across availability zones for true HA.
+      # Requires nodes labeled with topology.kubernetes.io/zone.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway  # Soft constraint (don't block scheduling)
+          labelSelector:
+            matchLabels:
+              app: finance-app

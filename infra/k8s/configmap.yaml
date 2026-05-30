@@ -1,0 +1,63 @@
+# =============================================================================
+# CONFIGMAP — Non-secret environment variables
+# =============================================================================
+# ConfigMap stores plain-text configuration (NOT secrets like passwords or keys).
+# Pods consume ConfigMap values as environment variables or mounted files.
+#
+# Rule: ConfigMap = anything you're OK with anyone on the team reading.
+#       Secret     = anything that would be dangerous if leaked.
+#
+# 12-factor app principle: separate config from code.
+# These values change between environments (dev/staging/prod) but the Docker
+# image stays the same — only the ConfigMap changes.
+# =============================================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: finance-app-config
+  namespace: finance-calculator
+  labels:
+    app.kubernetes.io/name: finance-calculator
+    app.kubernetes.io/component: config
+data:
+  # ── Application ──────────────────────────────────────────────────────────────
+  APP_NAME: "Finance Calculator"
+  APP_ENV: "production"
+  DEBUG: "false"
+
+  # ── Server ────────────────────────────────────────────────────────────────────
+  # Uvicorn binds to 0.0.0.0 inside the container so Kubernetes can route traffic.
+  # Port 8000 matches the EXPOSE in the Dockerfile and the Service targetPort.
+  HOST: "0.0.0.0"
+  PORT: "8000"
+
+  # ── Logging ───────────────────────────────────────────────────────────────────
+  # "json" in production → structured logs CloudWatch/Datadog can parse
+  # "pretty" in development → human-readable colour output
+  LOG_LEVEL: "info"
+  LOG_FORMAT: "json"
+
+  # ── Database (non-secret parts) ───────────────────────────────────────────────
+  # The full DATABASE_URL (including password) is in the Secret.
+  # We split it here purely for illustration — in practice use the full URL from Secret.
+  DB_HOST: "postgres-service"
+  DB_PORT: "5432"
+  DB_NAME: "finance_db"
+
+  # ── Redis (non-secret parts) ─────────────────────────────────────────────────
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
+
+  # ── CORS ─────────────────────────────────────────────────────────────────────
+  # In production, replace with your real domain.
+  # Kubernetes Ingress terminates TLS, so the app sees HTTP internally.
+  CORS_ORIGINS: "https://finance.yourdomain.com"
+
+  # ── Token expiry ─────────────────────────────────────────────────────────────
+  ACCESS_TOKEN_EXPIRE_MINUTES: "30"
+  REFRESH_TOKEN_EXPIRE_DAYS: "7"
+
+  # ── Feature flags ─────────────────────────────────────────────────────────────
+  RATE_LIMIT_ENABLED: "true"
+  RATE_LIMIT_PER_MINUTE: "60"

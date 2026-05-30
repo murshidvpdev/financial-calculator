@@ -1,0 +1,22 @@
+# =============================================================================
+# NAMESPACE
+# =============================================================================
+# A Namespace is a virtual cluster inside a real Kubernetes cluster.
+# It isolates resources: all k8s objects for this app live here.
+#
+# Why namespaces?
+#   - Isolation: staging and production can share one cluster in different namespaces
+#   - RBAC scoping: grant permissions per namespace, not cluster-wide
+#   - Resource quotas: limit total CPU/memory per namespace
+#   - Clean teardown: `kubectl delete namespace finance-calculator` removes everything
+#
+# Convention: one namespace per application (or per team in large orgs)
+# =============================================================================
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: finance-calculator
+  labels:
+    app.kubernetes.io/name: finance-calculator
+    app.kubernetes.io/managed-by: kubectl

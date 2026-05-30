@@ -1,0 +1,101 @@
+# =============================================================================
+# SERVICE — Stable network endpoint for the app pods
+# =============================================================================
+# Pods are ephemeral: they start/stop/move across nodes and get new IP addresses.
+# A Service gives you a STABLE virtual IP + DNS name that always routes to the
+# healthy pods selected by the label selector.
+#
+# Service types:
+#   ClusterIP   — internal only (default). Only reachable within the cluster.
+#   NodePort    — exposes on a port on every node. Good for development.
+#   LoadBalancer— provisions a cloud load balancer. Expensive, one per service.
+#   ExternalName— DNS alias to an external service (no proxying).
+#
+# Architecture decision: ClusterIP + Ingress (NOT LoadBalancer per service)
+#   - LoadBalancer per service = one AWS NLB/ELB per service = expensive
+#   - ClusterIP + one Ingress = one ALB for ALL services = cost-efficient
+#   - Ingress handles TLS termination, routing, and host-based virtual hosting
+# =============================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: finance-app-service
+  namespace: finance-calculator
+  labels:
+    app.kubernetes.io/name: finance-calculator
+    app.kubernetes.io/component: service
+spec:
+  # ── Type: ClusterIP ───────────────────────────────────────────────────────────
+  # Only accessible within the cluster.
+  # The Ingress (see ingress.yaml) routes external traffic to this Service.
+  type: ClusterIP
+
+  # ── Selector ─────────────────────────────────────────────────────────────────
+  # Only routes to pods that match ALL these labels.
+  # The kube-proxy watches for pod changes and updates routing rules in real-time.
+  selector:
+    app: finance-app
+
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80          # The port THIS Service listens on (inside the cluster)
+      targetPort: 8000  # The port on the Pod to forward to (matches containerPort)
+      # Note: no nodePort needed for ClusterIP
+
+  # ── Session affinity ─────────────────────────────────────────────────────────
+  # None = round-robin load balancing (default, stateless apps)
+  # ClientIP = same client always hits same pod (useful for WebSockets)
+  sessionAffinity: None
+
+---
+# =============================================================================
+# SERVICE — PostgreSQL (for local/minikube development)
+# =============================================================================
+# In production on AWS, this is replaced by Amazon RDS (managed PostgreSQL).
+# For local minikube testing, we run PostgreSQL as a StatefulSet (see postgres-pvc.yaml).
+# =============================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+  namespace: finance-calculator
+  labels:
+    app.kubernetes.io/name: finance-calculator
+    app.kubernetes.io/component: database
+spec:
+  type: ClusterIP
+  selector:
+    app: postgres
+  ports:
+    - name: postgres
+      protocol: TCP
+      port: 5432
+      targetPort: 5432
+
+---
+# =============================================================================
+# SERVICE — Redis (for local/minikube development)
+# =============================================================================
+# In production on AWS, this is replaced by Amazon ElastiCache (managed Redis).
+# =============================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-service
+  namespace: finance-calculator
+  labels:
+    app.kubernetes.io/name: finance-calculator
+    app.kubernetes.io/component: cache
+spec:
+  type: ClusterIP
+  selector:
+    app: redis
+  ports:
+    - name: redis
+      protocol: TCP
+      port: 6379
+      targetPort: 6379

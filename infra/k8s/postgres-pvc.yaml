@@ -1,0 +1,196 @@
+# =============================================================================
+# POSTGRESQL STATEFULSET + PERSISTENT VOLUME CLAIM
+# =============================================================================
+# This file runs PostgreSQL inside the cluster for LOCAL DEVELOPMENT / MINIKUBE.
+#
+# ⚠️  In production on AWS: use Amazon RDS PostgreSQL instead.
+#     RDS provides: automated backups, Multi-AZ failover, read replicas,
+#     automated minor version upgrades, and managed storage.
+#     Running stateful databases in Kubernetes requires significant operational
+#     expertise — prefer managed services in production.
+#
+# StatefulSet vs Deployment:
+#   Deployment: pods are interchangeable, get random names (finance-app-abc123)
+#   StatefulSet: pods get stable names (postgres-0, postgres-1) and stable storage
+#                Each pod gets its OWN PersistentVolumeClaim → data survives restarts
+#
+# PersistentVolumeClaim (PVC) lifecycle:
+#   PVC → "I need 5Gi of storage" (the claim/request)
+#   PV  → "Here is 5Gi of storage" (the actual disk)
+#   StorageClass → defines WHERE the disk comes from (local, AWS EBS, GCP PD)
+# =============================================================================
+
+# ── PersistentVolumeClaim — storage for PostgreSQL data ───────────────────────
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: finance-calculator
+  labels:
+    app.kubernetes.io/name: finance-calculator
+    app.kubernetes.io/component: database
+spec:
+  # AccessModes:
+  #   ReadWriteOnce  (RWO): one node can read+write (block storage like EBS, local)
+  #   ReadWriteMany  (RWX): many nodes can read+write (NFS, EFS)
+  #   ReadOnlyMany   (ROX): many nodes can read (shared data)
+  #
+  # PostgreSQL requires RWO — only one pod writes to the data directory.
+  accessModes:
+    - ReadWriteOnce
+
+  resources:
+    requests:
+      storage: 5Gi  # 5 GB — enough for development; scale in production
+
+  # StorageClass controls which provisioner creates the underlying volume.
+  # ""  → use the cluster default (minikube uses "standard" → hostPath)
+  # "gp3" on EKS → AWS EBS gp3 volume (better IOPS than gp2)
+  # storageClassName: ""  # Uncomment to use cluster default explicitly
+
+---
+# ── StatefulSet — PostgreSQL database ─────────────────────────────────────────
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: finance-calculator
+  labels:
+    app.kubernetes.io/name: finance-calculator
+    app.kubernetes.io/component: database
+spec:
+  serviceName: postgres-service  # Must match the headless Service name
+  replicas: 1  # Single instance for dev; production uses RDS Multi-AZ
+
+  selector:
+    matchLabels:
+      app: postgres
+
+  template:
+    metadata:
+      labels:
+        app: postgres
+        app.kubernetes.io/name: finance-calculator
+        app.kubernetes.io/component: database
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine  # Alpine = smaller image, same PostgreSQL
+          ports:
+            - containerPort: 5432
+              name: postgres
+
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: finance-app-config
+                  key: DB_NAME
+            - name: POSTGRES_USER
+              value: finance_user
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: finance-app-secret
+                  key: POSTGRES_PASSWORD
+            # Store data in the mounted PVC path
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+
+          # ── Mount PVC into the container ──────────────────────────────────────
+          volumeMounts:
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql/data
+
+          # ── Health checks ─────────────────────────────────────────────────────
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - finance_user
+                - -d
+                - finance_db
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - finance_user
+                - -d
+                - finance_db
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+
+      # ── Attach the PVC to the pod ─────────────────────────────────────────────
+      volumes:
+        - name: postgres-storage
+          persistentVolumeClaim:
+            claimName: postgres-pvc
+
+---
+# ── Redis Deployment (for local dev, replace with ElastiCache in prod) ────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: finance-calculator
+  labels:
+    app.kubernetes.io/name: finance-calculator
+    app.kubernetes.io/component: cache
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+        app.kubernetes.io/name: finance-calculator
+        app.kubernetes.io/component: cache
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+              name: redis
+          command:
+            - redis-server
+            - --requirepass
+            - $(REDIS_PASSWORD)
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: finance-app-secret
+                  key: REDIS_PASSWORD
+          livenessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"

@@ -1,0 +1,86 @@
+# =============================================================================
+# HORIZONTAL POD AUTOSCALER (HPA)
+# =============================================================================
+# HPA automatically scales the number of Pod replicas based on observed metrics.
+#
+# How it works:
+#   1. HPA controller polls metrics every 15 seconds (default)
+#   2. If average CPU > targetAverageUtilization → scale UP
+#   3. If average CPU < targetAverageUtilization for 5 minutes → scale DOWN
+#   4. Respects minReplicas and maxReplicas bounds
+#
+# Requirements: metrics-server must be running in the cluster.
+#   minikube: minikube addons enable metrics-server
+#   EKS:      kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+#
+# Scale-up formula:
+#   desiredReplicas = ceil(currentReplicas × (currentMetric / targetMetric))
+#   e.g. 3 pods at 80% CPU → ceil(3 × 80/70) = ceil(3.43) = 4 pods
+#
+# Scale-down is conservative: HPA waits 5 minutes of low usage before shrinking.
+# This prevents "flapping" (rapid scale-up/scale-down cycles).
+# =============================================================================
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: finance-app-hpa
+  namespace: finance-calculator
+  labels:
+    app.kubernetes.io/name: finance-calculator
+    app.kubernetes.io/component: autoscaler
+spec:
+  # ── Target workload ───────────────────────────────────────────────────────────
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: finance-app
+
+  # ── Replica bounds ─────────────────────────────────────────────────────────────
+  minReplicas: 2   # Never go below 2 (for HA — survive 1 pod failure)
+  maxReplicas: 10  # Never go above 10 (cost guard + avoid thundering-herd on DB)
+
+  # ── Scaling metrics ───────────────────────────────────────────────────────────
+  metrics:
+    # ── CPU-based scaling ──────────────────────────────────────────────────────
+    # Scale up when average CPU across all pods exceeds 70% of their request (100m).
+    # 70% of 100m = 70m CPU per pod.
+    # Python async apps: CPU spikes during sync operations (PDF parsing, bcrypt).
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+
+    # ── Memory-based scaling ──────────────────────────────────────────────────
+    # Scale up when average memory exceeds 80% of request (256Mi).
+    # 80% of 256Mi = ~205Mi per pod.
+    # Memory leaks → gradual increase → HPA adds pods → watch CloudWatch.
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+  # ── Scaling behaviour ─────────────────────────────────────────────────────────
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60  # Wait 60s of sustained high load before scaling up
+      policies:
+        - type: Pods
+          value: 2          # Add at most 2 pods per scaling event
+          periodSeconds: 60 # At most once per minute
+        - type: Percent
+          value: 50         # Or add 50% of current replicas (whichever adds MORE pods)
+          periodSeconds: 60
+      selectPolicy: Max     # Use whichever policy adds MORE pods (aggressive scale-up)
+
+    scaleDown:
+      stabilizationWindowSeconds: 300  # Wait 5 minutes before scaling down (avoid flapping)
+      policies:
+        - type: Pods
+          value: 1          # Remove at most 1 pod per scaling event
+          periodSeconds: 60 # At most once per minute
+      selectPolicy: Min     # Conservative (remove fewer pods)

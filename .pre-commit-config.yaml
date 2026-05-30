@@ -27,7 +27,9 @@ repos:
       - id: check-json
 
       # YAML files must be valid YAML
+      # --allow-multiple-documents: k8s manifests use --- to separate multiple resources in one file
       - id: check-yaml
+        args: ['--allow-multiple-documents']
 
       # TOML files must be valid TOML (catches broken pyproject.toml)
       - id: check-toml
