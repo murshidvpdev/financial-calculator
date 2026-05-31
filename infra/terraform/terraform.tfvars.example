@@ -1,0 +1,29 @@
+# =============================================================================
+# terraform.tfvars.example — Copy this to terraform.tfvars and fill in values
+# =============================================================================
+# terraform.tfvars is in .gitignore — never commit real values.
+# This example file IS committed — it shows what values are needed.
+# =============================================================================
+
+aws_region   = "us-east-1"
+environment  = "production"
+app_name     = "finance-calculator"
+
+# Your domain (must have an ACM certificate already created)
+domain_name     = "finance.yourdomain.com"
+certificate_arn = "arn:aws:acm:us-east-1:123456789:certificate/your-cert-id"
+
+# ECS sizing (start small, scale up if needed)
+ecs_task_cpu      = 512    # 0.5 vCPU
+ecs_task_memory   = 1024   # 1 GB
+ecs_desired_count = 2
+ecs_min_count     = 2
+ecs_max_count     = 10
+
+# RDS sizing
+db_instance_class    = "db.t3.micro"   # Free tier eligible
+db_allocated_storage = 20
+db_multi_az          = false           # Set true for production after launch
+
+# Redis sizing
+redis_node_type = "cache.t3.micro"
