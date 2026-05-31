@@ -205,7 +205,7 @@ resource "aws_ecs_task_definition" "app" {
         { name = "PORT",      value = "8000" },
         { name = "REDIS_HOST", value = aws_elasticache_cluster.redis.cache_nodes[0].address },
         { name = "REDIS_PORT", value = "6379" },
-        { name = "CORS_ORIGINS", value = "https://${var.domain_name}" },
+        { name = "CORS_ORIGINS", value = var.domain_name != "finance.yourdomain.com" ? "https://${var.domain_name}" : "*" },
       ]
 
       # Secrets injected from Secrets Manager at container start
@@ -294,12 +294,10 @@ resource "aws_lb_listener" "http" {
   protocol          = "HTTP"
 
   default_action {
-    type = "redirect"
-    redirect {
-      port        = "443"
-      protocol    = "HTTPS"
-      status_code = "HTTP_301"
-    }
+    # If no certificate: forward directly to app (HTTP only)
+    # If certificate provided: redirect to HTTPS instead (override in https listener)
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.app.arn
   }
 }
 
