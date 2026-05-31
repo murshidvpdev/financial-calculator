@@ -211,6 +211,19 @@ class SecurityHeadersMiddleware:
         ("X-XSS-Protection", "1; mode=block"),
         ("Referrer-Policy", "strict-origin-when-cross-origin"),
         ("Permissions-Policy", "geolocation=(), microphone=(), camera=()"),
+        # HSTS: tell browsers to ONLY use HTTPS for 1 year (production must be HTTPS)
+        ("Strict-Transport-Security", "max-age=31536000; includeSubDomains"),
+        # CSP: restrict where scripts/styles/images can load from (prevents XSS)
+        (
+            "Content-Security-Policy",
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' cdn.jsdelivr.net unpkg.com; "
+            "style-src 'self' 'unsafe-inline' cdn.jsdelivr.net fonts.googleapis.com; "
+            "font-src 'self' fonts.gstatic.com; "
+            "img-src 'self' data:; "
+            "connect-src 'self'; "
+            "frame-ancestors 'none'",
+        ),
     ]
 
     def __init__(self, app: ASGIApp) -> None:

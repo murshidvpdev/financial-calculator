@@ -79,6 +79,10 @@ babel = "^2.16.0"
 openpyxl = "^3.1.0"
 reportlab = "^4.2.0"
 
+# --- AI (Phase 17) ---
+# anthropic: Claude API SDK for expense categorization
+anthropic = "^0.40.0"
+
 # --- Email ---
 # fastapi-mail: Email sending (wraps smtplib/aiosmtplib)
 fastapi-mail = "^1.4.0"

@@ -45,11 +45,11 @@ terraform {
   #     --billing-mode PAY_PER_REQUEST --region us-east-1
   # =============================================================================
   backend "s3" {
-    bucket         = "finance-calculator-tfstate"
-    key            = "production/terraform.tfstate"
-    region         = "us-east-1"
-    encrypt        = true
-    dynamodb_table = "finance-calculator-tflock"
+    bucket       = "finance-calculator-tfstate-951913065376"
+    key          = "production/terraform.tfstate"
+    region       = "us-east-1"
+    encrypt      = true
+    use_lockfile = true
   }
 }
 

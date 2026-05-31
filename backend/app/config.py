@@ -105,6 +105,13 @@ class Settings(BaseSettings):
         ]
 
     # -------------------------------------------------------------------------
+    # AI Settings (Phase 17 — Claude API expense categorization)
+    # -------------------------------------------------------------------------
+    # Get your key at: https://console.anthropic.com
+    # Leave empty to disable AI categorization (falls back to keyword matching)
+    anthropic_api_key: str = ""
+
+    # -------------------------------------------------------------------------
     # Email Settings
     # -------------------------------------------------------------------------
     mail_username: str = ""

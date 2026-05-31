@@ -35,7 +35,7 @@ data:
   # ── Logging ───────────────────────────────────────────────────────────────────
   # "json" in production → structured logs CloudWatch/Datadog can parse
   # "pretty" in development → human-readable colour output
-  LOG_LEVEL: "info"
+  LOG_LEVEL: "INFO"
   LOG_FORMAT: "json"
 
   # ── Database (non-secret parts) ───────────────────────────────────────────────

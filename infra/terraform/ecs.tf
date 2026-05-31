@@ -304,11 +304,13 @@ resource "aws_lb_listener" "http" {
 }
 
 # HTTPS listener: forward to ECS target group
+# Only created when a certificate ARN is provided (skip during plan without a domain)
 resource "aws_lb_listener" "https" {
+  count             = var.certificate_arn != "" ? 1 : 0
   load_balancer_arn = aws_lb.main.arn
   port              = 443
   protocol          = "HTTPS"
-  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"  # Modern TLS only
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
   certificate_arn   = var.certificate_arn
 
   default_action {
@@ -348,7 +350,7 @@ resource "aws_ecs_service" "app" {
     container_port   = 8000
   }
 
-  depends_on = [aws_lb_listener.https]
+  depends_on = [aws_lb_listener.http]
 }
 
 # ── Auto Scaling ──────────────────────────────────────────────────────────────
