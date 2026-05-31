@@ -217,7 +217,10 @@ resource "aws_cloudwatch_dashboard" "main" {
       # ── Row 1: ECS ───────────────────────────────────────────────────────
       {
         type   = "metric"
-        x      = 0; y = 0; width = 8; height = 6
+        x      = 0
+        y      = 0
+        width  = 8
+        height = 6
         properties = {
           title  = "ECS CPU Utilization %"
           view   = "timeSeries"
@@ -233,7 +236,10 @@ resource "aws_cloudwatch_dashboard" "main" {
       },
       {
         type   = "metric"
-        x      = 8; y = 0; width = 8; height = 6
+        x      = 8
+        y      = 0
+        width  = 8
+        height = 6
         properties = {
           title  = "ECS Memory Utilization %"
           view   = "timeSeries"
@@ -249,7 +255,10 @@ resource "aws_cloudwatch_dashboard" "main" {
       },
       {
         type   = "metric"
-        x      = 16; y = 0; width = 8; height = 6
+        x      = 16
+        y      = 0
+        width  = 8
+        height = 6
         properties = {
           title   = "ECS Running Task Count"
           view    = "timeSeries"
@@ -261,7 +270,10 @@ resource "aws_cloudwatch_dashboard" "main" {
       # ── Row 2: ALB ───────────────────────────────────────────────────────
       {
         type   = "metric"
-        x      = 0; y = 6; width = 8; height = 6
+        x      = 0
+        y      = 6
+        width  = 8
+        height = 6
         properties = {
           title  = "ALB Request Count"
           view   = "timeSeries"
@@ -272,7 +284,10 @@ resource "aws_cloudwatch_dashboard" "main" {
       },
       {
         type   = "metric"
-        x      = 8; y = 6; width = 8; height = 6
+        x      = 8
+        y      = 6
+        width  = 8
+        height = 6
         properties = {
           title  = "ALB Response Time p99 (seconds)"
           view   = "timeSeries"
@@ -283,7 +298,10 @@ resource "aws_cloudwatch_dashboard" "main" {
       },
       {
         type   = "metric"
-        x      = 16; y = 6; width = 8; height = 6
+        x      = 16
+        y      = 6
+        width  = 8
+        height = 6
         properties = {
           title  = "ALB HTTP 5xx Errors"
           view   = "timeSeries"
@@ -295,7 +313,10 @@ resource "aws_cloudwatch_dashboard" "main" {
       # ── Row 3: RDS ───────────────────────────────────────────────────────
       {
         type   = "metric"
-        x      = 0; y = 12; width = 8; height = 6
+        x      = 0
+        y      = 12
+        width  = 8
+        height = 6
         properties = {
           title   = "RDS CPU %"
           view    = "timeSeries"
@@ -306,7 +327,10 @@ resource "aws_cloudwatch_dashboard" "main" {
       },
       {
         type   = "metric"
-        x      = 8; y = 12; width = 8; height = 6
+        x      = 8
+        y      = 12
+        width  = 8
+        height = 6
         properties = {
           title   = "RDS DB Connections"
           view    = "timeSeries"
@@ -317,7 +341,10 @@ resource "aws_cloudwatch_dashboard" "main" {
       },
       {
         type   = "metric"
-        x      = 16; y = 12; width = 8; height = 6
+        x      = 16
+        y      = 12
+        width  = 8
+        height = 6
         properties = {
           title   = "RDS Free Storage (GB)"
           view    = "timeSeries"
